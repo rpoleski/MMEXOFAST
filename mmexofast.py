@@ -1082,12 +1082,12 @@ class MMEXOFASTFitter:
         list of WorkflowStep
         """
         return [
-            WorkflowStep(
-                name='select_best_point_lens_model',
-                func=self.select_best_point_lens_model,
-                stage='search_for_anomaly',
-                description='Select the best point-lens model for anomaly search',
-            ),
+            #WorkflowStep( # This step doesn't do anything.
+            #    name='select_best_point_lens_model',
+            #    func=self.select_best_point_lens_model,
+            #    stage='search_for_anomaly',
+            #    description='Select the best point-lens model for anomaly search',
+            #),
             WorkflowStep(
                 name='compute_residuals',
                 func=self.compute_residuals,
@@ -1584,10 +1584,13 @@ class MMEXOFASTFitter:
         # If no complete fits exist, return the sole available record
         # (e.g. a user-supplied initial guess without chi2)
         if not complete_fits:
-            raise RuntimeError(
-                'No complete point-lens fits found and more than one '
-                'incomplete record exists — cannot select best model.'
-            )
+            if len(point_lens_fits) > 1:
+                raise RuntimeError(
+                    'No complete point-lens fits found and more than one '
+                    'incomplete record exists — cannot select best model.'
+                )
+            else:
+                return point_lens_fits[0]
 
         static_fits = [
             rec for key, rec in self.all_fit_results.items()
@@ -1628,6 +1631,9 @@ class MMEXOFASTFitter:
         ``run_af_grid()``.
         """
         best = self.select_best_point_lens_model()
+        logger.info('Calculating residuals relative to %s',
+                    mmexo.fit_types.model_key_to_label(best.model_key))
+
         event = MulensModel.Event(
             datasets=self.datasets,
             model=MulensModel.Model(best.params),
@@ -1636,10 +1642,10 @@ class MMEXOFASTFitter:
         )
         event.fit_fluxes()
 
-        self._residuals: list = []
+        self.residuals: list = []
         for i, dataset in enumerate(self.datasets):
             res, err = event.fits[i].get_residuals(phot_fmt='flux')
-            self._residuals.append(
+            self.residuals.append(
                 MulensModel.MulensData(
                     [dataset.time, res, err],
                     phot_fmt='flux',
@@ -1656,11 +1662,23 @@ class MMEXOFASTFitter:
         ``self.intermediate_results.best_af_grid_point``.
         """
         af_grid = mmexo.AnomalyFinderGridSearch(
-            residuals=self._residuals
+            residuals=self.residuals
         )
         af_grid.run()
+
+        if (self._output_config is not None
+                and self._output_config.save_plots):
+            fig = af_grid.plot()
+            fig.savefig(self._output_config.plot_path('af_grid'))
+            plt.close(fig)
+            logger.info(
+                'Saved EF grid plot to %s.',
+                self._output_config.plot_path('ef_grid'),
+            )
+
         logger.info('Best AF grid point: %s', af_grid.best)
         self.intermediate_results.best_af_grid_point = af_grid.best
+
 
     def get_anomaly_lc_params(self):
         """

@@ -97,7 +97,6 @@ _STEPS_RENORM = [
     ('refit_all',            'renormalize'),
 ]
 _STEPS_SEARCH_ANOMALY = [
-    ('select_best_point_lens_model', 'search_for_anomaly'),
     ('compute_residuals',            'search_for_anomaly'),
     ('run_af_grid',                  'search_for_anomaly'),
     ('get_anomaly_lc_params',        'search_for_anomaly'),
