@@ -54,11 +54,25 @@ big_wide_planets = [4, 62]
 close_planets = [32, 40, 50, 74, 92, 95, 87,  186, 227]
 big_close_planets = [27, 120, 124, 128, 172]
 
-#lc_nums = wide_planets[-1:]
-for lc_num in np.sort(lc_nums):
+# Missing events:
+print(len(lc_nums))
+print(lc_nums)
+keep = []
+for i, lc_num in enumerate(lc_nums):
     output_dir = os.path.join(base_dir, 'W{0:03}'.format(lc_num))
-    if os.path.exists(output_dir):
-        continue
+    if not os.path.exists(output_dir):
+        keep.append(lc_num)
+
+print(len(keep))
+print(keep)
+
+#lc_nums = wide_planets[-1:]
+#lc_nums = [47, 62, 69, 78, 103, 163]
+lc_nums = keep
+for lc_num in np.sort(lc_nums):
+    #output_dir = os.path.join(base_dir, 'W{0:03}'.format(lc_num))
+    #if not os.path.exists(output_dir):
+    #    continue
 
     print('\n...Fitting light curve {0}...'.format(lc_num))
     try:
