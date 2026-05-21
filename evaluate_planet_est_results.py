@@ -69,16 +69,47 @@ class EvaluateResults():
         with pd.option_context('display.width', None):
               print(self.results[print_columns].sort_values('idx'))
 
-
-    def _make_scatter_plot(self, key, log=False):
+    def _get_truth_key(self, key):
         if key == 'rho':
             truth_key = key + 's'
         else:
             truth_key = key.replace('_', '')
 
         truth_key += '_true'
+        return truth_key
+
+    def _plot(self, x, y, ylim=None, log=False):
+        plt.figure()
+        
+        colors = np.where(self.results['s_true'] < 1, 'darkorange', 'darkcyan')
+        facecolors = np.where(self.results['q_true'] < 0.03, colors, 'none')
+        low_mag = self.results['u0_true'].abs() > 0.05
+
+        for mask, marker in zip([low_mag, ~low_mag], ['o', 'd']):
+            plt.scatter(
+                x[mask], y[mask],
+                c=colors[mask], facecolors=facecolors[mask], marker=marker,
+                clip_on=False, zorder=3, )
+
+        if log:
+            # Define masks for each out-of-range direction
+            mask_above = y > ylim[1]
+            mask_below = y < ylim[0]
+
+            # Plot out-of-range points as triangles at the plot edge
+            plt.scatter(x[mask_above], np.full(mask_above.sum(), ylim[1]),
+                        marker='^', c=colors[mask_above], facecolors=facecolors[mask_above],
+                        clip_on=False, zorder=3, )
+            plt.scatter(x[mask_below], np.full(mask_below.sum(), ylim[0]),
+                        marker='v', c=colors[mask_below], facecolors=facecolors[mask_below],
+                        clip_on=False, zorder=3, )
+
+    def _make_scatter_plot(self, key, log=False):
+        truth_key = self._get_truth_key(key)
+
         fit_value = self.results[key]
         true_value = self.results[truth_key]
+
         if (key == 'u_0') and log:
             fit_value = np.abs(fit_value)
             true_value = np.abs(true_value)
@@ -87,38 +118,17 @@ class EvaluateResults():
             delta = np.log10(fit_value) - np.log10(true_value)
             value = np.log10(true_value)
             xlabel = f'log ({key}_true)'
-            ylabel = f'log ({key} - True)'
+            ylabel = f'log({key}) - log(True)'
             ylim = (-1.5, 1.5)
 
         else:
-            delta = fit_value - true_value
             value = true_value
+            delta = (fit_value - true_value)
             xlabel = f'{key}_true'
-            ylabel = f'{key} - True'
+            ylabel = f'({key} - True)'
             ylim = None
 
-        colors = np.where(self.results['s_true'] < 1, 'darkorange', 'darkcyan')
-        facecolors = np.where(self.results['q_true'] < 0.03, colors, 'none')
-        low_mag = self.results['u0_true'].abs() > 0.05
-
-        for mask, marker in zip([low_mag, ~low_mag], ['o', 'd']):
-            plt.scatter(
-                value[mask], delta[mask] / value[mask],
-                c=colors[mask], facecolors=facecolors[mask], marker=marker,
-                clip_on=False, zorder=3,)
-
-        if log:
-            # Define masks for each out-of-range direction
-            mask_above = delta > ylim[1]
-            mask_below = delta < ylim[0]
-
-            # Plot out-of-range points as triangles at the plot edge
-            plt.scatter(value[mask_above], np.full(mask_above.sum(), ylim[1]),
-                        marker='^', c=colors[mask_above], facecolors=facecolors[mask_above],
-                        clip_on=False, zorder=3,)
-            plt.scatter(value[mask_below], np.full(mask_below.sum(), ylim[0]),
-                        marker='v', c=colors[mask_below], facecolors=facecolors[mask_below],
-                        clip_on=False, zorder=3,)
+        self._plot(value, delta, ylim=ylim, log=log)
 
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
@@ -126,14 +136,48 @@ class EvaluateResults():
         plt.minorticks_on()
         plt.tight_layout()
 
-    def make_all_plots(self):
+    def make_all_delta_plots(self):
         plot_list = {'u_0': True, 't_E': False, 'rho': True, 'alpha': False, 's': True, 'q': True}
         for key, log in plot_list.items():
             plt.figure()
             self._make_scatter_plot(key, log=log)
 
+    def make_scatter_plot(self, key, log=False):
+        fit_value = self.results[key]
+        true_value = self.results[self._get_truth_key(key)]
+
+        self._plot(true_value, fit_value)
+        
+        plt.gca().set_aspect('equal')
+        ylim = plt.gca().get_ylim()
+        xlim = plt.gca().get_xlim()
+        min_lim = np.min([xlim[0], ylim[0]])
+        max_lim = np.max([xlim[1], ylim[1]])
+        plt.plot([min_lim, max_lim], [min_lim, max_lim], zorder=0, color='black', clip_on=True)
+
+        if log:
+            plt.xlabel(f'log {key} (True)')
+            plt.xscale('log')
+            plt.ylabel(f'log {key} (Fitted)')
+            plt.yscale('log')
+        else:
+            plt.xlabel(f'{key} (True)')
+            plt.ylabel(f'{key} (Fitted)')
+
+        plt.minorticks_on()
+        plt.tight_layout()
+
+    def make_all_scatter_plots(self):
+        for key in ['u_0', 't_E', 'alpha', 's', 'q']:
+            if key == 'q':
+                log = True
+            else:
+                log = False
+
+            self.make_scatter_plot(key, log=log)
+
 
 if __name__=='__main__':
     evaluator = EvaluateResults()
-    evaluator.make_all_plots()
+    evaluator.make_all_scatter_plots()
     plt.show()
