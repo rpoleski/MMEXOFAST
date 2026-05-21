@@ -510,9 +510,9 @@ class AnomalyFinderGridSearch(EventFinderGridSearch):
             # Check for a minimum of 5 datapoints
             n_tot = np.sum(np.hstack(
                 [dataset.good for dataset in trimmed_datasets]))
-            print('n_tot', n_tot)
+            #print('n_tot', n_tot)
             successive = self.check_successive(trimmed_datasets)
-            print('successive', successive)
+            #print('successive', successive)
             if (n_tot > 5) and (successive):
                 do_fit = True
 

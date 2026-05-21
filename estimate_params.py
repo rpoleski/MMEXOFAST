@@ -1124,9 +1124,9 @@ class ClosePlanetParameterEstimator(WidePlanetParameterEstimator):
     @property
     def q(self):
         if self._q is None:
-            print((self.params['dt'] / self.params['t_E'] / 4.)**2)
-            print((self.s / self.u_0))
-            print(np.abs((np.sin(np.deg2rad(self.alpha)))**3))
+            #print((self.params['dt'] / self.params['t_E'] / 4.)**2)
+            #print((self.s / self.u_0))
+            #print(np.abs((np.sin(np.deg2rad(self.alpha)))**3))
             self._q = (self.params['dt'] / self.params['t_E'] / 4.)**2 * (self.s / self.u_0) * np.abs((np.sin(np.deg2rad(self.alpha)))**3)
         return self._q
 

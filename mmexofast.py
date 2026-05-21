@@ -1626,7 +1626,7 @@ class MMEXOFASTFitter:
 
         Notes
         -----
-        Residuals are stored in ``self._residuals`` as a list of
+        Residuals are stored in ``self.residuals`` as a list of
         ``MulensData`` objects in flux format, for use by
         ``run_af_grid()``.
         """
