@@ -470,16 +470,10 @@ class AnomalyFinderGridSearch(EventFinderGridSearch):
         return chi2
 
     def check_successive(self, trimmed_datasets):
-        times = None
-        residuals = None
-        for dataset in trimmed_datasets:
-            if times is None:
-                times = dataset.time
-                residuals = dataset.flux / dataset.err_flux
-            else:
-                times = np.hstack((times, dataset.time))
-                residuals = np.hstack((residuals,
-                                       dataset.flux / dataset.err_flux))
+        """at least three successive points >=2 sigma away from the zero-residual curve."""
+
+        times = np.hstack([dataset.time for dataset in trimmed_datasets])
+        residuals = np.hstack([np.abs(dataset.flux / dataset.err_flux) for dataset in trimmed_datasets])
 
         ind_sort = np.argsort(times)
         times = times[ind_sort]
@@ -502,6 +496,10 @@ class AnomalyFinderGridSearch(EventFinderGridSearch):
 
         trimmed_datasets = self.get_trimmed_datasets(
             parameters, verbose=verbose)
+        #plt.figure()
+        #for dataset in trimmed_datasets:
+        #    dataset.plot()
+        #plt.show()
 
         do_fit = False
         # Only fit the window if there's enough data to do so.
@@ -512,8 +510,9 @@ class AnomalyFinderGridSearch(EventFinderGridSearch):
             # Check for a minimum of 5 datapoints
             n_tot = np.sum(np.hstack(
                 [dataset.good for dataset in trimmed_datasets]))
-            #print('n_tot', n_tot)
+            print('n_tot', n_tot)
             successive = self.check_successive(trimmed_datasets)
+            print('successive', successive)
             if (n_tot > 5) and (successive):
                 do_fit = True
 
