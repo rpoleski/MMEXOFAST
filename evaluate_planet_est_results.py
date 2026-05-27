@@ -13,7 +13,7 @@ from examples.use_cases.DC18_classes import DC18Answers
 
 def get_results():
     results = []
-    log_files = glob.glob('temp_output/W*/WFIRST.*.log')
+    log_files = glob.glob('temp_output/no_par/W*/WFIRST.*.log')
     #log_files = glob.glob('temp_output/W004/WFIRST.004.log')
     failed = []
     hm = []
@@ -49,6 +49,9 @@ def get_results():
 
 
 class EvaluateResults():
+    eval_columns = ['idx', 'u0_true', 'u_0', 'tE_true', 't_E', 's_true', 's', 'q_true', 'q']
+    print_columns = ['idx', 't_0', 't0_true', 'u_0', 'u0_true', 't_E', 'tE_true', 'rho', 'rhos_true',
+                     's', 's_true', 'q', 'q_true', 'alpha', 'alpha_true']
 
     def __init__(self):
         self.results = get_results()
@@ -62,12 +65,10 @@ class EvaluateResults():
             right_index=True,
             how='left',  # Keep all rows in self.results
         )
-        print_columns = ['idx', 't_0', 't0_true', 'u_0', 'u0_true', 't_E', 'tE_true', 'rho', 'rhos_true',
-                         's', 's_true', 'q', 'q_true', 'alpha', 'alpha_true']
 
         print('\nsucceeded:', len(self.results))
         with pd.option_context('display.width', None):
-              print(self.results[print_columns].sort_values('idx'))
+              print(self.results[self.print_columns].sort_values('idx'))
 
     def _get_truth_key(self, key):
         if key == 'rho':
@@ -141,6 +142,7 @@ class EvaluateResults():
         for key, log in plot_list.items():
             plt.figure()
             self._make_scatter_plot(key, log=log)
+            plt.savefig(f'temp_output/no_par/figs/{key}_deltas.png', dpi=300)
 
     def make_scatter_plot(self, key, log=False):
         fit_value = self.results[key]
@@ -168,16 +170,28 @@ class EvaluateResults():
         plt.tight_layout()
 
     def make_all_scatter_plots(self):
-        for key in ['u_0', 't_E', 'alpha', 's', 'q']:
-            if key == 'q':
+        for key in ['u_0', 't_E', 'rho', 'alpha', 's', 'q']:
+            if key == 'q' or key == 'rho':
                 log = True
             else:
                 log = False
 
             self.make_scatter_plot(key, log=log)
+            plt.savefig(f'temp_output/no_par/figs/{key}_vs.png', dpi=300)
 
+    def is_log_q_good(self, threshold=0.5):
+        delta = np.log10(self.results['q']) - np.log10(self.results['q_true'])
+        good = np.abs(delta) < threshold
+        print(f'|dlog q|< {threshold}: {np.sum(good)}')
+        print('good:', (self.results[good]['idx']+1).tolist())
+        print('bad:', (self.results[~good]['idx'] + 1).tolist())
+        with pd.option_context('display.width', None, 'display.max_rows', None):
+            print('\ngood:\n', self.results[good][self.eval_columns].sort_values('idx'))
+            print('\nbad:\n', self.results[~good][self.eval_columns].sort_values('idx'))
 
 if __name__=='__main__':
     evaluator = EvaluateResults()
+    evaluator.is_log_q_good()
     evaluator.make_all_scatter_plots()
-    plt.show()
+    evaluator.make_all_delta_plots()
+    #plt.show()
