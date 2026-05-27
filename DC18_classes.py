@@ -141,7 +141,10 @@ if __name__ == '__main__':
     answers = DC18Answers()
     event_info = pd.DataFrame(event_info, index=event_info['num'])
     answers.data = answers.data.merge(event_info)
+    with pd.option_context('display.width', None, 'display.max_rows', None):
+        print(answers.data[answers.print_columns].iloc[np.array([139, 193, 217, 250, 289])-1])
+
     #answers.print_wide_orbit_planets()
     #print(answers.data.columns)
     #print(answers.data[['idx', 'subrun', 'field', 'src_id', 'lens_id', 'file_', 'num']])
-    answers.plot_model(208)
+    #answers.plot_model(208)

@@ -11,7 +11,7 @@ from DC18_classes import dir_, TestDataSet
 
 
 base_dir = os.path.join(
-            exozippy.MODULE_PATH, 'EXOZIPPy', 'DC18Test', 'temp_output')
+            exozippy.MODULE_PATH, 'EXOZIPPy', 'DC18Test', 'temp_output', 'no_par')
 
 
 def fit_lc(lc_num, verbose=False):
@@ -23,6 +23,7 @@ def fit_lc(lc_num, verbose=False):
     fitter = exozippy.mmexofast.mmexofast.fit(
         files=[data.file_w149, data.file_z087], coords=data.coords, fit_type='binary_lens',
         verbose=verbose, renormalize_errors=False,
+        no_parallax=True,
         log_file=os.path.join(output_dir, file_prefix + '.log'),
         restart_file=os.path.join(output_dir, file_prefix + '.pkl'),
         stop_after='fit_binary_lens:est_binary_params',
@@ -53,22 +54,23 @@ wide_planets = [8, 53, 107, 131, 152, 194, 208, 214, 217, 226]
 big_wide_planets = [4, 62]
 close_planets = [32, 40, 50, 74, 92, 95, 87,  186, 227]
 big_close_planets = [27, 120, 124, 128, 172]
+slow_parallax = [124, 128, 217] # 66 is broke
 
 # Missing events:
-print(len(lc_nums))
-print(lc_nums)
-keep = []
-for i, lc_num in enumerate(lc_nums):
-    output_dir = os.path.join(base_dir, 'W{0:03}'.format(lc_num))
-    if not os.path.exists(output_dir):
-        keep.append(lc_num)
-
-print(len(keep))
-print(keep)
+#print(len(lc_nums))
+#print(lc_nums)
+#keep = []
+#for i, lc_num in enumerate(lc_nums):
+#    output_dir = os.path.join(base_dir, 'W{0:03}'.format(lc_num))
+#    if not os.path.exists(output_dir):
+#        keep.append(lc_num)
+#
+#print(len(keep))
+#print(keep)
 
 #lc_nums = wide_planets[-1:]
 #lc_nums = [47, 62, 69, 78, 103, 163]
-lc_nums = keep
+#lc_nums = slow_parallax
 for lc_num in np.sort(lc_nums):
     #output_dir = os.path.join(base_dir, 'W{0:03}'.format(lc_num))
     #if not os.path.exists(output_dir):
