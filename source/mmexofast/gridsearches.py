@@ -14,8 +14,7 @@ import warnings
 
 import MulensModel
 import sfit_minimizer
-import exozippy.mmexofast as mmexo
-
+from .fitters import SFitFitter, WidePlanetFitter
 
 # TODO: Separate EventFinder & AnomalyFinder grid searches from Rectangular grid searches.
 
@@ -2826,7 +2825,7 @@ class ParallaxGridSearch(BaseRectGridSearch):
     """
     Grid search over parallax parameters pi_E_E and pi_E_N.
 
-    For each grid point, runs mmexo.fitters.SFitFitter with fixed parallax
+    For each grid point, runs mmexofast.fitters.SFitFitter with fixed parallax
     parameters and returns chi2 + fit results.
     """
 
@@ -2965,7 +2964,7 @@ class ParallaxGridSearch(BaseRectGridSearch):
         # can be unified (differ in fitter.run() call and chi2 retrieval method)
         if self.skip_optimization:
             try:
-                fitter = mmexo.fitters.SFitFitter(
+                fitter = SFitFitter(
                     initial_model_params=model_params,
                     datasets=self.datasets,
                     parameters_to_fit=self.parameters_to_fit,
@@ -2989,7 +2988,7 @@ class ParallaxGridSearch(BaseRectGridSearch):
                 }
         else:
             try:
-                fitter = mmexo.fitters.SFitFitter(
+                fitter = SFitFitter(
                     initial_model_params=model_params,
                     datasets=self.datasets,
                     parameters_to_fit=self.parameters_to_fit,
@@ -3092,12 +3091,13 @@ class ParallaxGridSearch(BaseRectGridSearch):
 
         return scatter
 
+
 class BinaryGridSearch(BaseRectGridSearch):
     """
     Grid search over binary lens parameters s (separation), q (mass ratio),
     and alpha (source trajectory angle).
 
-    For each grid point, runs mmexo.fitters.SFitFitter with fixed binary
+    For each grid point, runs mmexofast.fitters.SFitFitter with fixed binary
     parameters and returns chi2 + fit results.
     """
 
@@ -3239,7 +3239,7 @@ class BinaryGridSearch(BaseRectGridSearch):
 
         # Run fitter
         try:
-            fitter = mmexo.fitters.SFitFitter(
+            fitter = WidePlanetFitter(
                 initial_model_params=model_params,
                 datasets=self.datasets,
                 **self.fitter_kwargs

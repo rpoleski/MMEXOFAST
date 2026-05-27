@@ -7,7 +7,7 @@ import MulensModel
 from sfit_minimizer.sfit_classes import SFitResults
 from sfit_minimizer.mm_funcs import PointLensSFitFunction
 
-from exozippy.mmexofast import results, fit_types
+from mmexofast import results, fit_types
 
 
 # ============================================================================

@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/MMEXOFAST.iml" filepath="$PROJECT_DIR$/.idea/MMEXOFAST.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/mmexofast.iml" filepath="$PROJECT_DIR$/.idea/mmexofast.iml" />
     </modules>
   </component>
 </project>

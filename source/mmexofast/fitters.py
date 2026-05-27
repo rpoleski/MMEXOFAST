@@ -6,10 +6,9 @@ import emcee
 from multiprocessing import Pool, cpu_count
 import os
 
-import exozippy.mmexofast as mmexo
-
 
 import numpy as np
+from .estimate_params import WidePlanetEnsembleInitializer
 
 
 class MinimalResults:
@@ -437,7 +436,7 @@ class AnomalyFitter(MulensFitter):
     anomaly_lc_params : dict, optional
         Parameters describing the anomaly light curve. Used to estimate
         initial model parameters in ``estimate_initial_parameters()``.
-        See ``mmexo.estimate_params.AnomalyPropertyEstimator.get_anomaly_lc_parameters()``
+        See ``mmexofast.estimate_params.AnomalyPropertyEstimator.get_anomaly_lc_parameters()``
         for the expected structure.
     datasets : list, optional
         List of MulensModel.MulensData objects. Inherited from ``MulensFitter``
@@ -854,7 +853,7 @@ class WidePlanetFitter(AnomalyFitter):
         list
             List of ``n_walkers`` parameter vectors, each of length ``n_dim``.
         """
-        self._initializer = mmexo.estimate_params.WidePlanetEnsembleInitializer(
+        self._initializer = WidePlanetEnsembleInitializer(
             datasets=self.datasets,
             anomaly_params=self.anomaly_lc_params,
             sigmas=self.sigmas,

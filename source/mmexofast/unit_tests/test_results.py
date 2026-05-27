@@ -6,9 +6,9 @@ from unittest.mock import Mock
 import pickle
 import os.path
 
-import exozippy
-from exozippy.mmexofast import results, fit_types
-from exozippy.mmexofast.unit_tests.test_utils import (
+import mmexofast as mmexo
+from mmexofast import results, fit_types
+from mmexofast.unit_tests.test_utils import (
     create_mock_fitter,
     create_mock_params_and_sigmas,
 )
@@ -829,9 +829,9 @@ class TestIntermediateResults(unittest.TestCase):
         MMEXOFASTFitter has an intermediate_results attribute of type
         IntermediateResults, initialized with all fields None.
         """
-        fitter = exozippy.mmexofast.MMEXOFASTFitter(
+        fitter = mmexo.MMEXOFASTFitter(
             files=[os.path.join(
-                exozippy.MULENS_DATA_PATH, 'OB140939',
+                mmexo.DATA_PATH, 'OB140939',
                 'n20100310.I.OGLE.OB140939.txt')],
             coords='17:47:12.25 -21:22:58.7',
             fit_type='point lens',
@@ -849,9 +849,9 @@ class TestIntermediateResults(unittest.TestCase):
         """
         intermediate_results is correctly restored by _restore_state().
         """
-        fitter = exozippy.mmexofast.MMEXOFASTFitter(
+        fitter = mmexo.MMEXOFASTFitter(
             files=[os.path.join(
-                exozippy.MULENS_DATA_PATH, 'OB140939',
+                mmexo.DATA_PATH, 'OB140939',
                 'n20100310.I.OGLE.OB140939.txt')],
             coords='17:47:12.25 -21:22:58.7',
             fit_type='point lens',

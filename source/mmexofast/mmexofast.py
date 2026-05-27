@@ -21,9 +21,15 @@ import numpy as np
 import pandas as pd
 from scipy.special import erfcinv
 
-import exozippy.mmexofast as mmexo
-from .results import AllFitResults, FitRecord, IntermediateResults
+from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFitResults, EmceeFitResults
 from .workflow_step import WorkflowStep
+from .estimate_params import get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator, \
+    ClosePlanetGridSearchEstimator, CloseUpperPlanetParameterEstimator, CloseLowerPlanetParameterEstimator
+from .fitters import SFitFitter, WidePlanetFitter
+from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType, SourceType, ParallaxBranch, LensOrbMotion
+from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
+from .classifier import AnomalyClassifier
+from .observatories import get_kwargs, get_telescope_band_from_filename
 
 logger = logging.getLogger(__name__)
 
@@ -750,8 +756,8 @@ class MMEXOFASTFitter:
             ``'sigmas'``, ``'renorm_factors'``, and ``'fixed'``.
         """
         for label, payload in initial_results.items():
-            key = mmexo.fit_types.label_to_model_key(label)
-            record = mmexo.FitRecord(
+            key = label_to_model_key(label)
+            record = FitRecord(
                 model_key=key,
                 params=payload['params'],
                 sigmas=payload.get('sigmas'),
@@ -981,11 +987,11 @@ class MMEXOFASTFitter:
         list of WorkflowStep
         """
         if self._initial_entry_point == 'fit_pspl':
-            static_pspl_key = mmexo.FitKey(
-                lens_type=mmexo.LensType.POINT,
-                source_type=mmexo.SourceType.POINT,
-                parallax_branch=mmexo.ParallaxBranch.NONE,
-                lens_orb_motion=mmexo.LensOrbMotion.NONE,
+            static_pspl_key = FitKey(
+                lens_type=LensType.POINT,
+                source_type=SourceType.POINT,
+                parallax_branch=ParallaxBranch.NONE,
+                lens_orb_motion=LensOrbMotion.NONE,
             )
             existing = self.all_fit_results.get(static_pspl_key)
             pspl_seed = existing.params
@@ -1232,7 +1238,7 @@ class MMEXOFASTFitter:
         Stores the best grid point in
         ``self.intermediate_results.best_ef_grid_point``.
         """
-        ef_grid = mmexo.EventFinderGridSearch(datasets=self.datasets)
+        ef_grid = EventFinderGridSearch(datasets=self.datasets)
         ef_grid.run()
 
         if (self._output_config is not None
@@ -1254,7 +1260,7 @@ class MMEXOFASTFitter:
 
         Stores estimates in ``self.intermediate_results.est_pl_params``.
         """
-        est = mmexo.estimate_params.get_PSPL_params(
+        est = get_PSPL_params(
             self.intermediate_results.best_ef_grid_point,
             self.datasets,
         )
@@ -1278,27 +1284,27 @@ class MMEXOFASTFitter:
         if initial_params is None:
             initial_params = self.intermediate_results.est_pl_params
 
-        fitter = mmexo.fitters.SFitFitter(
+        fitter = SFitFitter(
             initial_model_params=initial_params,
             datasets=self.datasets,
             **self._get_fitter_kwargs(
-                source_type=mmexo.SourceType.POINT
+                source_type=SourceType.POINT
             ),
         )
         fitter.run()
         logger.info('Static PSPL: %s', fitter.best)
         logger.info('    sigmas:  %s', list(fitter.results.sigmas))
 
-        key = mmexo.FitKey(
-            lens_type=mmexo.LensType.POINT,
-            source_type=mmexo.SourceType.POINT,
-            parallax_branch=mmexo.ParallaxBranch.NONE,
-            lens_orb_motion=mmexo.LensOrbMotion.NONE,
+        key = FitKey(
+            lens_type=LensType.POINT,
+            source_type=SourceType.POINT,
+            parallax_branch=ParallaxBranch.NONE,
+            lens_orb_motion=LensOrbMotion.NONE,
         )
         self.all_fit_results.set(
-            mmexo.FitRecord.from_full_result(
+            FitRecord.from_full_result(
                 model_key=key,
-                full_result=mmexo.MMEXOFASTFitResults(fitter),
+                full_result=MMEXOFASTFitResults(fitter),
                 renorm_factors=self.renorm_factors,
                 fixed=False,
             )
@@ -1326,11 +1332,11 @@ class MMEXOFASTFitter:
             If no static PSPL fit exists to seed from.
         """
         if initial_params is None:
-            pspl_key = mmexo.FitKey(
-                lens_type=mmexo.LensType.POINT,
-                source_type=mmexo.SourceType.POINT,
-                parallax_branch=mmexo.ParallaxBranch.NONE,
-                lens_orb_motion=mmexo.LensOrbMotion.NONE,
+            pspl_key = FitKey(
+                lens_type=LensType.POINT,
+                source_type=SourceType.POINT,
+                parallax_branch=ParallaxBranch.NONE,
+                lens_orb_motion=LensOrbMotion.NONE,
             )
             pspl_record = self.all_fit_results.get(pspl_key)
             if pspl_record is None:
@@ -1340,7 +1346,7 @@ class MMEXOFASTFitter:
             initial_params = dict(pspl_record.params)
             initial_params['rho'] = 1.5 * initial_params['u_0']
 
-        fitter = mmexo.fitters.SFitFitter(
+        fitter = SFitFitter(
             initial_model_params=initial_params,
             datasets=self.datasets,
             **self._get_fitter_kwargs(),
@@ -1349,16 +1355,16 @@ class MMEXOFASTFitter:
         logger.info('Static FSPL: %s', fitter.best)
         logger.info('    sigmas:  %s', list(fitter.results.sigmas))
 
-        key = mmexo.FitKey(
-            lens_type=mmexo.LensType.POINT,
-            source_type=mmexo.SourceType.FINITE,
-            parallax_branch=mmexo.ParallaxBranch.NONE,
-            lens_orb_motion=mmexo.LensOrbMotion.NONE,
+        key = FitKey(
+            lens_type=LensType.POINT,
+            source_type=SourceType.FINITE,
+            parallax_branch=ParallaxBranch.NONE,
+            lens_orb_motion=LensOrbMotion.NONE,
         )
         self.all_fit_results.set(
-            mmexo.FitRecord.from_full_result(
+            FitRecord.from_full_result(
                 model_key=key,
-                full_result=mmexo.MMEXOFASTFitResults(fitter),
+                full_result=MMEXOFASTFitResults(fitter),
                 renorm_factors=self.renorm_factors,
                 fixed=False,
             )
@@ -1381,16 +1387,16 @@ class MMEXOFASTFitter:
         """
         if branch is not None:
             source_type = (
-                mmexo.SourceType.FINITE
+                SourceType.FINITE
                 if self.finite_source
-                else mmexo.SourceType.POINT
+                else SourceType.POINT
             )
             keys = [
-                mmexo.FitKey(
-                    lens_type=mmexo.LensType.POINT,
+                FitKey(
+                    lens_type=LensType.POINT,
                     source_type=source_type,
                     parallax_branch=branch,
-                    lens_orb_motion=mmexo.LensOrbMotion.NONE,
+                    lens_orb_motion=LensOrbMotion.NONE,
                 )
             ]
         else:
@@ -1403,7 +1409,7 @@ class MMEXOFASTFitter:
             )
             if result is not None:
                 self.all_fit_results.set(
-                    mmexo.FitRecord.from_full_result(
+                    FitRecord.from_full_result(
                         model_key=key,
                         full_result=result,
                         renorm_factors=self.renorm_factors,
@@ -1433,7 +1439,7 @@ class MMEXOFASTFitter:
         reference_model = reference_fit.full_result.fitter.get_model()
         logger.info(
             'Renormalizing using: %s',
-            mmexo.fit_types.model_key_to_label(reference_fit.model_key),
+            model_key_to_label(reference_fit.model_key),
         )
 
         event = MulensModel.Event(
@@ -1538,16 +1544,16 @@ class MMEXOFASTFitter:
             fitter.initial_model_params = fit_record.params
             fitter.run()
             self.all_fit_results.set(
-                mmexo.FitRecord.from_full_result(
+                FitRecord.from_full_result(
                     model_key=key,
-                    full_result=mmexo.MMEXOFASTFitResults(fitter),
+                    full_result=MMEXOFASTFitResults(fitter),
                     renorm_factors=self.renorm_factors,
                     fixed=False,
                 )
             )
             logger.info(
                 '%s: %s',
-                mmexo.fit_types.model_key_to_label(key),
+                model_key_to_label(key),
                 fitter.best,
             )
             logger.info('    sigmas:  %s', list(fitter.results.sigmas))
@@ -1578,7 +1584,7 @@ class MMEXOFASTFitter:
 
         point_lens_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == mmexo.LensType.POINT
+            if key.lens_type == LensType.POINT
         ]
 
         if not point_lens_fits:
@@ -1602,14 +1608,14 @@ class MMEXOFASTFitter:
 
         static_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == mmexo.LensType.POINT
-               and key.parallax_branch == mmexo.ParallaxBranch.NONE
+            if key.lens_type == LensType.POINT
+               and key.parallax_branch == ParallaxBranch.NONE
                and rec.chi2() is not None
         ]
         parallax_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == mmexo.LensType.POINT
-               and key.parallax_branch != mmexo.ParallaxBranch.NONE
+            if key.lens_type == LensType.POINT
+               and key.parallax_branch != ParallaxBranch.NONE
                and rec.chi2() is not None
         ]
 
@@ -1640,7 +1646,7 @@ class MMEXOFASTFitter:
         """
         best = self.select_best_point_lens_model()
         logger.info('Calculating residuals relative to %s',
-                    mmexo.fit_types.model_key_to_label(best.model_key))
+                    model_key_to_label(best.model_key))
 
         event = MulensModel.Event(
             datasets=self.datasets,
@@ -1669,7 +1675,7 @@ class MMEXOFASTFitter:
         Stores the best grid point in
         ``self.intermediate_results.best_af_grid_point``.
         """
-        af_grid = mmexo.AnomalyFinderGridSearch(
+        af_grid = AnomalyFinderGridSearch(
             residuals=self.residuals
         )
         af_grid.run()
@@ -1697,7 +1703,7 @@ class MMEXOFASTFitter:
         ``self.intermediate_results.anomaly_lc_params``.
         """
         best_pspl = self.select_best_point_lens_model()
-        estimator = mmexo.estimate_params.AnomalyPropertyEstimator(
+        estimator = AnomalyPropertyEstimator(
             datasets=self.datasets,
             pspl_params=best_pspl.params,
             af_results=self.intermediate_results.best_af_grid_point,
@@ -1715,7 +1721,7 @@ class MMEXOFASTFitter:
         Stores estimates in
         ``self.intermediate_results.anomaly_type``.
         """
-        classifier = mmexo.AnomalyClassifier()
+        classifier = AnomalyClassifier()
         self.intermediate_results.anomaly_type = classifier.classify(self.intermediate_results.anomaly_lc_params)
         logger.info('Anomaly classified as anomaly_type = %s', self.intermediate_results.anomaly_type)
 
@@ -1731,7 +1737,7 @@ class MMEXOFASTFitter:
         if self.intermediate_results.anomaly_type == 'wide':
             est_params = {}
 
-            estimator = mmexo.estimate_params.WidePlanetGridSearchEstimator(
+            estimator = WidePlanetGridSearchEstimator(
                 datasets=self.datasets,
                 params=self.intermediate_results.anomaly_lc_params,
                 coords=self.coords,
@@ -1745,7 +1751,7 @@ class MMEXOFASTFitter:
         elif self.intermediate_results.anomaly_type == 'close':
             est_params = {}
 
-            estimator = mmexo.estimate_params.ClosePlanetGridSearchEstimator(
+            estimator = ClosePlanetGridSearchEstimator(
                 datasets=self.datasets,
                 params=self.intermediate_results.anomaly_lc_params,
                 coords=self.coords,
@@ -1783,7 +1789,7 @@ class MMEXOFASTFitter:
         sigmas['u_0'] = min(sigmas['u_0'], max_sigma_u_0)
         sigmas['t_E'] = min(sigmas['t_E'], max_sigma_t_E)
 
-        wide_planet_fitter = mmexo.fitters.WidePlanetFitter(
+        wide_planet_fitter = WidePlanetFitter(
             datasets=self.datasets,
             anomaly_lc_params=self.intermediate_results.est_binary_params,
             sigmas=sigmas,
@@ -1796,20 +1802,20 @@ class MMEXOFASTFitter:
         )
         wide_planet_fitter.run()
 
-        key = mmexo.FitKey(
-            lens_type=mmexo.LensType.BINARY,
+        key = FitKey(
+            lens_type=LensType.BINARY,
             source_type=(
-                mmexo.SourceType.FINITE
+                SourceType.FINITE
                 if self.finite_source
-                else mmexo.SourceType.POINT
+                else SourceType.POINT
             ),
-            parallax_branch=mmexo.ParallaxBranch.NONE,
-            lens_orb_motion=mmexo.LensOrbMotion.NONE,
+            parallax_branch=ParallaxBranch.NONE,
+            lens_orb_motion=LensOrbMotion.NONE,
         )
         self.all_fit_results.set(
-            mmexo.FitRecord.from_full_result(
+            FitRecord.from_full_result(
                 model_key=key,
-                full_result=mmexo.EmceeFitResults(wide_planet_fitter),
+                full_result=EmceeFitResults(wide_planet_fitter),
                 renorm_factors=self.renorm_factors,
                 fixed=False,
             )
@@ -1846,7 +1852,7 @@ class MMEXOFASTFitter:
             U0_PLUS and U0_MINUS.
         """
         branches = (
-            [mmexo.ParallaxBranch.U0_PLUS, mmexo.ParallaxBranch.U0_MINUS]
+            [ParallaxBranch.U0_PLUS, ParallaxBranch.U0_MINUS]
             if branch is None
             else [branch]
         )
@@ -1863,7 +1869,7 @@ class MMEXOFASTFitter:
             logger.info(
                 'Running parallax grid for %s.', par_branch.value
             )
-            grid = mmexo.ParallaxGridSearch(
+            grid = ParallaxGridSearch(
                 static_params,
                 datasets=self.datasets,
                 grid_params=self.PARALLAX_GRID_PARAMS_COARSE,
@@ -1896,7 +1902,7 @@ class MMEXOFASTFitter:
         self,
         params,
         source_type=None,
-    ) -> mmexo.MMEXOFASTFitResults:
+    ) -> MMEXOFASTFitResults:
         """
         Shared implementation invoked by ``fit_parallax()`` and
         ``run_parallax_grids()``.
@@ -1917,12 +1923,12 @@ class MMEXOFASTFitter:
         """
         if source_type is None:
             source_type = (
-                mmexo.SourceType.FINITE
+                SourceType.FINITE
                 if ('rho' in params or 't_star' in params)
-                else mmexo.SourceType.POINT
+                else SourceType.POINT
             )
 
-        fitter = mmexo.fitters.SFitFitter(
+        fitter = SFitFitter(
             initial_model_params=params,
             datasets=self.datasets,
             **self._get_fitter_kwargs(source_type=source_type),
@@ -1935,9 +1941,9 @@ class MMEXOFASTFitter:
 
         logger.info('Parallax fit: %s', fitter.best)
         logger.info('      sigmas: %s', list(fitter.results.sigmas))
-        return mmexo.MMEXOFASTFitResults(fitter)
+        return MMEXOFASTFitResults(fitter)
 
-    def _get_parallax_seed_params(self, key: mmexo.FitKey) -> dict:
+    def _get_parallax_seed_params(self, key: FitKey) -> dict:
         """
         Return starting parameters for a parallax fit key.
 
@@ -1964,12 +1970,12 @@ class MMEXOFASTFitter:
             If no static point-lens result is available as a fallback.
         """
         BRANCH_SIGNS = {
-            mmexo.ParallaxBranch.U0_PLUS:  (+1, +1),
-            mmexo.ParallaxBranch.U0_MINUS: (-1, -1),
-            mmexo.ParallaxBranch.U0_PP:    (+1, +1),
-            mmexo.ParallaxBranch.U0_MM:    (-1, -1),
-            mmexo.ParallaxBranch.U0_PM:    (+1, -1),
-            mmexo.ParallaxBranch.U0_MP:    (-1, +1),
+            ParallaxBranch.U0_PLUS:  (+1, +1),
+            ParallaxBranch.U0_MINUS: (-1, -1),
+            ParallaxBranch.U0_PP:    (+1, +1),
+            ParallaxBranch.U0_MM:    (-1, -1),
+            ParallaxBranch.U0_PM:    (+1, -1),
+            ParallaxBranch.U0_MP:    (-1, +1),
         }
 
         # 1. Exact match
@@ -2003,11 +2009,11 @@ class MMEXOFASTFitter:
                 return base
 
         # 3. Static point-lens fallback
-        static_key = mmexo.FitKey(
-            lens_type=mmexo.LensType.POINT,
+        static_key = FitKey(
+            lens_type=LensType.POINT,
             source_type=key.source_type,
-            parallax_branch=mmexo.ParallaxBranch.NONE,
-            lens_orb_motion=mmexo.LensOrbMotion.NONE,
+            parallax_branch=ParallaxBranch.NONE,
+            lens_orb_motion=LensOrbMotion.NONE,
         )
         static_rec = self.all_fit_results.get(static_key)
         if static_rec is None:
@@ -2079,8 +2085,8 @@ class MMEXOFASTFitter:
             Step name to start from, or None if no shortcut applies.
         """
         has_pspl = any(
-            key.lens_type == mmexo.LensType.POINT
-            and key.parallax_branch == mmexo.ParallaxBranch.NONE
+            key.lens_type == LensType.POINT
+            and key.parallax_branch == ParallaxBranch.NONE
             for key in self.all_fit_results.keys()
         )
 
@@ -2133,7 +2139,7 @@ class MMEXOFASTFitter:
             key: getattr(self, key, None) for key in self.CONFIG_KEYS
         }
 
-    def _iter_parallax_point_lens_keys(self) -> Iterable[mmexo.FitKey]:
+    def _iter_parallax_point_lens_keys(self) -> Iterable[FitKey]:
         """
         Yield FitKeys for all parallax branches appropriate for the
         current data.
@@ -2152,28 +2158,28 @@ class MMEXOFASTFitter:
         )
         if n_loc <= 1:
             branches = [
-                mmexo.ParallaxBranch.U0_PLUS,
-                mmexo.ParallaxBranch.U0_MINUS,
+                ParallaxBranch.U0_PLUS,
+                ParallaxBranch.U0_MINUS,
             ]
         else:
             branches = [
-                mmexo.ParallaxBranch.U0_PP,
-                mmexo.ParallaxBranch.U0_MM,
-                mmexo.ParallaxBranch.U0_PM,
-                mmexo.ParallaxBranch.U0_MP,
+                ParallaxBranch.U0_PP,
+                ParallaxBranch.U0_MM,
+                ParallaxBranch.U0_PM,
+                ParallaxBranch.U0_MP,
             ]
 
         source_type = (
-            mmexo.SourceType.FINITE
+            SourceType.FINITE
             if self.finite_source
-            else mmexo.SourceType.POINT
+            else SourceType.POINT
         )
         for branch in branches:
-            yield mmexo.FitKey(
-                lens_type=mmexo.LensType.POINT,
+            yield FitKey(
+                lens_type=LensType.POINT,
                 source_type=source_type,
                 parallax_branch=branch,
-                lens_orb_motion=mmexo.LensOrbMotion.NONE,
+                lens_orb_motion=LensOrbMotion.NONE,
             )
 
     def _plot_piE_grid_search(self, grids: dict) -> None:
@@ -2205,8 +2211,8 @@ class MMEXOFASTFitter:
         cax = fig.add_subplot(gs[2])
 
         branches = [
-            mmexo.ParallaxBranch.U0_PLUS,
-            mmexo.ParallaxBranch.U0_MINUS,
+            ParallaxBranch.U0_PLUS,
+            ParallaxBranch.U0_MINUS,
         ]
         scatter = None
         for i, (ax, par_branch) in enumerate(zip(axes, branches)):
@@ -2330,7 +2336,7 @@ class MMEXOFASTFitter:
         best_fit = (
             min(complete_fits, key=lambda r: r.chi2()) if complete_fits else None
         )
-        if best_fit.model_key.lens_type == mmexo.LensType.POINT:
+        if best_fit.model_key.lens_type == LensType.POINT:
             best_fit = self.select_best_point_lens_model()
 
         event = best_fit.full_result.fitter.get_event()
@@ -2399,7 +2405,7 @@ class MMEXOFASTFitter:
                     raise FileNotFoundError(
                         f'Data file does not exist: {filename}'
                     )
-                kwargs = mmexo.observatories.get_kwargs(filename)
+                kwargs = get_kwargs(filename)
                 datasets.append(
                     MulensModel.MulensData(
                         file_name=filename, **kwargs
@@ -2495,7 +2501,7 @@ class MMEXOFASTFitter:
             'fix_blend_flux':              self.fix_blend_flux_map,
         })
 
-        if source_type == mmexo.SourceType.POINT:
+        if source_type == SourceType.POINT:
             kwargs['mag_methods'] = None
         return kwargs
 
@@ -2640,8 +2646,7 @@ class MMEXOFASTFitter:
                 for i, dataset in enumerate(self.datasets):
                     if 'label' in dataset.plot_properties:
                         obs, band = (
-                            mmexo.observatories
-                            .get_telescope_band_from_filename(
+                            get_telescope_band_from_filename(
                                 dataset.plot_properties['label']
                             )
                         )
@@ -2673,16 +2678,16 @@ class MMEXOFASTFitter:
         pm_symbol = r'$\pm$' if table_type == 'latex' else '+/-'
 
         # Resolve models to (label, FitRecord) pairs
-        pairs: list[tuple[str, mmexo.FitRecord]] = []
+        pairs: list[tuple[str, FitRecord]] = []
         if models is None:
             for key, record in self.all_fit_results.items():
-                label = mmexo.fit_types.model_key_to_label(key)
+                label = model_key_to_label(key)
                 pairs.append((label, record))
         else:
             for m in models:
                 key = (
-                    m if isinstance(m, mmexo.FitKey)
-                    else mmexo.fit_types.label_to_model_key(m)
+                    m if isinstance(m, FitKey)
+                    else label_to_model_key(m)
                 )
                 record = self.all_fit_results.get(key)
                 if record is None:
@@ -2690,7 +2695,7 @@ class MMEXOFASTFitter:
                         f'No FitRecord found for model {m!r}.'
                     )
                 pairs.append(
-                    (mmexo.fit_types.model_key_to_label(key), record)
+                    (model_key_to_label(key), record)
                 )
 
         results_table: Optional[pd.DataFrame] = None

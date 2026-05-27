@@ -7,7 +7,7 @@ from numpy import testing
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-from exozippy.mmexofast.ulens import Star, Phys2UlensConverter
+from mmexofast.ulens import Star, Phys2UlensConverter
 
 
 class TestGRAVITYEvent(unittest.TestCase):

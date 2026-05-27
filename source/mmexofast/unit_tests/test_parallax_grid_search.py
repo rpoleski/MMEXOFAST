@@ -2,7 +2,7 @@
 Integration test suite for ParallaxGridSearch (no mocking).
 
 All tests run against the real mmexo.fitters.SFitFitter and real OGLE
-photometry data loaded from disk via MULENS_DATA_PATH.
+photometry data loaded from disk via mmexo.DATA_PATH.
 
 Test classes
 ------------
@@ -22,10 +22,10 @@ See TestPlaceholders for behaviors not yet tested.
 import os
 import numpy as np
 import pytest
-from exozippy import MULENS_DATA_PATH
-from exozippy.mmexofast.gridsearches import ParallaxGridSearch, BaseRectGridSearch
+
+import mmexofast as mmexo
+from mmexofast.gridsearches import ParallaxGridSearch, BaseRectGridSearch
 from MulensModel import MulensData
-import exozippy.mmexofast as mmexo
 
 
 # ---------------------------------------------------------------------------
@@ -33,13 +33,13 @@ import exozippy.mmexofast as mmexo
 # ---------------------------------------------------------------------------
 
 DATA_FILE = os.path.join(
-    MULENS_DATA_PATH,
+    mmexo.DATA_PATH,
     'OB140939',
     'n20100310.I.OGLE.OB140939.txt',
 )
 
 COORDS_FILE = os.path.join(
-    MULENS_DATA_PATH,
+    mmexo.DATA_PATH,
     'OB140939',
     'coords.txt',
 )
@@ -217,7 +217,7 @@ def refinement_result(tmp_path_factory):
 
 def test_imports():
     """Smoke test: verify the full import chain is healthy before any test runs."""
-    assert MULENS_DATA_PATH is not None
+    assert mmexo.DATA_PATH is not None
     assert ParallaxGridSearch is not None
     assert BaseRectGridSearch is not None
     assert MulensData is not None
@@ -234,8 +234,8 @@ def test_data_file_exists():
     """
     assert os.path.isfile(DATA_FILE), (
         f"Required data file not found: {DATA_FILE}\n"
-        f"MULENS_DATA_PATH resolves to: {MULENS_DATA_PATH}\n"
-        "Check the data directory structure and MULENS_DATA_PATH definition."
+        f"mmexo.DATA_PATH resolves to: {mmexo.DATA_PATH}\n"
+        "Check the data directory structure and mmexo.DATA_PATH definition."
     )
 
 

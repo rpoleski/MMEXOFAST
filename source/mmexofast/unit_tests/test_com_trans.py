@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy.testing
 import MulensModel
 
-from exozippy.mmexofast import com_trans
+from mmexofast import com_trans
 
 
 class TestCOMass2COMag(unittest.TestCase):

@@ -1,5 +1,5 @@
 import os.path
-import exozippy
+from .config import DATA_PATH
 
 
 # ============================================================================
@@ -260,7 +260,7 @@ register_observatory(Observatory(
     phot_fmt='flux',
     usecols=[0, 1, 2],
     ephemerides_file=os.path.join(
-        exozippy.MULENS_DATA_PATH, '2018DataChallenge',
+        DATA_PATH, '2018DataChallenge',
         'wfirst_ephemeris_W149.txt'),
     bands={
         'W149': {'color': 'darkorange', 'marker': 'o'},
@@ -274,7 +274,7 @@ register_observatory(Observatory(
     phot_fmt='flux',
     usecols=[0, 1, 2],
     ephemerides_file=os.path.join(
-        exozippy.MULENS_DATA_PATH, 'spitzer_ephemerides_2014_to_2019.txt'),
+        DATA_PATH, 'spitzer_ephemerides_2014_to_2019.txt'),
     bands={
         'L': {'color': 'red', 'marker': 'o'}
     }

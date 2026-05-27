@@ -6,7 +6,8 @@ from collections.abc import MutableMapping
 from abc import ABC, abstractmethod
 
 import MulensModel
-import exozippy.mmexofast as mmexo
+from mmexofast.fit_types import model_key_to_label, label_to_model_key, FitKey, LensType
+from mmexofast.observatories import get_telescope_band_from_filename
 
 
 # ============================================================================
@@ -213,7 +214,7 @@ class MMEXOFASTFitResults(BaseFitResults):
                 #    band = dataset.bandpass
                 #else:
                 #    band = "mag"
-                obs, band = mmexo.observatories.get_telescope_band_from_filename(dataset.plot_properties['label'])
+                obs, band = get_telescope_band_from_filename(dataset.plot_properties['label'])
 
                 parameters.append(f"{band}_S_{obs}")
                 parameters.append(f"{band}_B_{obs}")
@@ -445,7 +446,7 @@ class EmceeFitResults(BaseFitResults):
         blend_fluxes  = self.fitter._event.blend_fluxes
 
         for i, dataset in enumerate(self.datasets):
-            obs, band = mmexo.observatories.get_telescope_band_from_filename(
+            obs, band = get_telescope_band_from_filename(
                 dataset.plot_properties['label']
             )
             if len(source_fluxes[i]) == 1:
@@ -493,7 +494,7 @@ class FitRecord:
 
     Attributes
     ----------
-    model_key : mmexo.FitKey
+    model_key : FitKey
         Key identifying the model configuration (lens type, source type, etc.).
     params : dict
         Dictionary mapping parameter names to fitted values.
@@ -512,7 +513,7 @@ class FitRecord:
         Whether the fit completed successfully.
 
     """
-    model_key: mmexo.FitKey
+    model_key: FitKey
     params: dict
     sigmas: dict = None
     renorm_factors: dict = None
@@ -527,7 +528,7 @@ class FitRecord:
 
         Parameters
         ----------
-        model_key : mmexo.FitKey
+        model_key : FitKey
             Key identifying the model configuration.
         full_result : MMEXOFASTFitResults
             Complete fit results from MMEXOFAST.
@@ -714,21 +715,21 @@ class GridSearchResult:
 
 class AllFitResults(MutableMapping):
     """
-    Central registry for all fit results, keyed by mmexo.FitKey.
+    Central registry for all fit results, keyed by FitKey.
     """
     def __init__(self):
-        self._records: Dict[mmexo.FitKey, FitRecord] = {}
+        self._records: Dict[FitKey, FitRecord] = {}
 
     # --- Required MutableMapping methods ---
-    def __getitem__(self, key_or_label: str | mmexo.FitKey) -> FitRecord:
+    def __getitem__(self, key_or_label: str | FitKey) -> FitRecord:
         key = self._normalize_key(key_or_label)
         return self._records[key]
 
-    def __setitem__(self, key_or_label: str | mmexo.FitKey, record: FitRecord) -> None:
+    def __setitem__(self, key_or_label: str | FitKey, record: FitRecord) -> None:
         key = self._normalize_key(key_or_label)
         self._records[key] = record
 
-    def __delitem__(self, key_or_label: str | mmexo.FitKey) -> None:
+    def __delitem__(self, key_or_label: str | FitKey) -> None:
         key = self._normalize_key(key_or_label)
         del self._records[key]
 
@@ -739,31 +740,31 @@ class AllFitResults(MutableMapping):
         return len(self._records)
 
     # --- internal helper ---
-    def _normalize_key(self, key_or_label: str | mmexo.FitKey) -> mmexo.FitKey:
-        if isinstance(key_or_label, mmexo.FitKey):
+    def _normalize_key(self, key_or_label: str | FitKey) -> FitKey:
+        if isinstance(key_or_label, FitKey):
             return key_or_label
-        return mmexo.fit_types.label_to_model_key(key_or_label)
+        return label_to_model_key(key_or_label)
 
     # --- custom convenience methods ---
-    def get(self, key_or_label: str | mmexo.FitKey) -> Optional[FitRecord]:
+    def get(self, key_or_label: str | FitKey) -> Optional[FitRecord]:
         key = self._normalize_key(key_or_label)
         return self._records.get(key)
 
     def set(self, record: FitRecord) -> None:
         self._records[record.model_key] = record
 
-    def has(self, key_or_label: str | mmexo.FitKey) -> bool:
+    def has(self, key_or_label: str | FitKey) -> bool:
         key = self._normalize_key(key_or_label)
         return key in self._records
 
     def keys(self, labels: bool = False):
         if labels:
-            return [mmexo.fit_types.model_key_to_label(k) for k in self._records.keys()]
+            return [model_key_to_label(k) for k in self._records.keys()]
         return list(self._records.keys())
 
     def items(self, labels: bool = False):
         if labels:
-            return [(mmexo.fit_types.model_key_to_label(k), r) for k, r in self._records.items()]
+            return [(model_key_to_label(k), r) for k, r in self._records.items()]
         return list(self._records.items())
 
     def __repr__(self) -> str:
@@ -772,7 +773,7 @@ class AllFitResults(MutableMapping):
 
         lines = ["<AllFitResults:"]
         for key, record in self._records.items():
-            label = mmexo.fit_types.model_key_to_label(key)
+            label = model_key_to_label(key)
             lines.append(f"  {label!r}: {record}")
         lines.append(">")
         return "\n".join(lines)
@@ -780,7 +781,7 @@ class AllFitResults(MutableMapping):
     def iter_point_lens_records(self):
         """Yield (key, record) pairs for all point-lens models (PSPL/FSPL)."""
         for key, record in self._records.items():
-            if key.lens_type == mmexo.LensType.POINT:
+            if key.lens_type == LensType.POINT:
                 yield key, record
 
 

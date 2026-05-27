@@ -1,6 +1,6 @@
 import unittest
 
-from exozippy.mmexofast import AnomalyClassifier
+from mmexofast import AnomalyClassifier
 
 
 class TestAnomalyClassifier(unittest.TestCase):
@@ -19,6 +19,6 @@ class TestAnomalyClassifier(unittest.TestCase):
         assert result == 'wide'
 
     def test_hm(self):
-        hm_params = {'t_0': 2453480.68, 't_E': 73.9, 'u_0': 0.023, 'dmag': 0.3, 'dt': 1.5, 't_pl': 2453480.6}  # OB05071
+        hm_params = {'t_0': 2453480.68, 't_E': 73.9, 'u_0': 0.023, 'dmag': -0.3, 'dt': 1.5, 't_pl': 2453480.6}  # OB05071
         result = self.classifier.classify(hm_params)
         assert result == 'high_mag'

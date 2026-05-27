@@ -4,7 +4,7 @@ Test various solutions with the s_dagger degeneracy.
 import unittest
 import numpy as np
 
-import exozippy.mmexofast as mmexo
+import mmexofast as mmexo
 
 KB161105 = {
     'Wide C': {'t_0': 2457555.772, 'u_0': 0.154, 't_E': 42.5, 'alpha': np.rad2deg(3.832), 's': 1.155, 'q': 10.**(-4.069)},

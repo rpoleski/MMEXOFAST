@@ -17,9 +17,6 @@ import warnings
 
 import MulensModel
 import MulensModel as mm
-import exozippy.mmexofast as mmexo
-
-# In[ ]:
 
 
 def get_PSPL_params(ef_grid_point, datasets, verbose=False):

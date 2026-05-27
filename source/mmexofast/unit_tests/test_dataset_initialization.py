@@ -7,8 +7,8 @@ from pathlib import Path
 
 import MulensModel
 
-from exozippy import MULENS_DATA_PATH
-from exozippy.mmexofast import MMEXOFASTFitter, OutputConfig
+import mmexofast as mmexo
+from mmexofast import MMEXOFASTFitter, OutputConfig
 
 
 @unittest.skip("Multi-location workflows not implemented.")
@@ -18,8 +18,8 @@ class TestDatasetInitialization(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test data paths."""
-        cls.ob140939_dir = Path(MULENS_DATA_PATH) / 'OB140939'
-        cls.ob05390_dir = Path(MULENS_DATA_PATH) / 'OB05390'
+        cls.ob140939_dir = Path(mmexo.DATA_PATH) / 'OB140939'
+        cls.ob05390_dir = Path(mmexo.DATA_PATH) / 'OB05390'
 
         # Read coordinates
         with open(cls.ob140939_dir / 'coords.txt') as f:

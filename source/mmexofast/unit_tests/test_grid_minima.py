@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import matplotlib.pyplot as plt
 
-from exozippy.mmexofast.gridsearches import BaseRectGridSearch
+from mmexofast.gridsearches import BaseRectGridSearch
 
 
 # ----------------------------------------------------------------

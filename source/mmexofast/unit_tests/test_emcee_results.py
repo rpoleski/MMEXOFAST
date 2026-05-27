@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 import MulensModel
-from exozippy.mmexofast import EmceeFitResults, FitRecord
+from mmexofast import EmceeFitResults, FitRecord
 
 
 # ===========================================================================

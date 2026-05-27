@@ -5,9 +5,7 @@ import MulensModel
 import numpy as np
 import matplotlib.pyplot as plt
 
-from exozippy.mmexofast import estimate_params, com_trans
-from exozippy import MULENS_DATA_PATH
-from exozippy.mmexofast import fitters
+from mmexofast import estimate_params, com_trans, fitters
 
 
 class TestGetWideParams_alpha(unittest.TestCase):
@@ -341,7 +339,7 @@ class TestGetCloseParams(unittest.TestCase, KB160625):
 class TestAnomalyParameterEstimator(unittest.TestCase):
 
     def setUp(self):
-        datafile = os.path.join(MULENS_DATA_PATH, 'unit_test_data', 'planet4AF.dat')
+        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'planet4AF.dat')
         self.data = MulensModel.MulensData(
             file_name=datafile,
             phot_fmt='mag')

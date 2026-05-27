@@ -2,7 +2,7 @@
 
 import unittest
 
-from exozippy.mmexofast import fit_types
+from mmexofast import fit_types
 
 
 class TestEnums(unittest.TestCase):
