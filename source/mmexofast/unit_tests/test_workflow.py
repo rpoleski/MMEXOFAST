@@ -12,20 +12,22 @@ from unittest.mock import MagicMock, patch
 import mmexofast as mmexo
 from mmexofast import MMEXOFASTFitter, WorkflowStep
 from mmexofast.fitters import MulensFitter
+from mmexofast.config import DATA_PATH
+from mmexofast import fit_types
 
 # OB05390
 OB05390_FILES = sorted(glob.glob(os.path.join(
-    mmexo.DATA_PATH, 'OB05390', 'n200*.txt')))
+    DATA_PATH, 'OB05390', 'n200*.txt')))
 
 with open(os.path.join(
-        mmexo.DATA_PATH, 'OB05390', 'coords.txt')) as f:
+        DATA_PATH, 'OB05390', 'coords.txt')) as f:
     OB05390_COORDS = f.read().strip()
 
-BINARY_FIT_KEY = mmexo.fit_types.FitKey(
-    lens_type=mmexo.fit_types.LensType.BINARY,
-    source_type=mmexo.fit_types.SourceType.FINITE,
-    parallax_branch=mmexo.fit_types.ParallaxBranch.NONE,
-    lens_orb_motion=mmexo.fit_types.LensOrbMotion.NONE,
+BINARY_FIT_KEY = fit_types.FitKey(
+    lens_type=fit_types.LensType.BINARY,
+    source_type=fit_types.SourceType.FINITE,
+    parallax_branch=fit_types.ParallaxBranch.NONE,
+    lens_orb_motion=fit_types.LensOrbMotion.NONE,
     locations_used=None,
 )
 
@@ -48,16 +50,16 @@ BEST_EF_GRID_POINT = {
 
 # OB140939
 GROUND_DATA_FILES = [os.path.join(
-    mmexo.DATA_PATH, 'OB140939',
+    DATA_PATH, 'OB140939',
     'n20100310.I.OGLE.OB140939.txt')]
 
 COORDS = '17:47:12.25 -21:22:58.7'
 
-STATIC_PSPL_KEY = mmexo.fit_types.FitKey(
-    lens_type=mmexo.fit_types.LensType.POINT,
-    source_type=mmexo.fit_types.SourceType.POINT,
-    parallax_branch=mmexo.fit_types.ParallaxBranch.NONE,
-    lens_orb_motion=mmexo.fit_types.LensOrbMotion.NONE,
+STATIC_PSPL_KEY = fit_types.FitKey(
+    lens_type=fit_types.LensType.POINT,
+    source_type=fit_types.SourceType.POINT,
+    parallax_branch=fit_types.ParallaxBranch.NONE,
+    lens_orb_motion=fit_types.LensOrbMotion.NONE,
     locations_used=None,
 )
 
@@ -292,7 +294,7 @@ class TestPointLensWorkflow(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='point_lens',
+            fit_type='point_lens',
             renormalize_errors=False)
         defaults.update(kwargs)
         return MMEXOFASTFitter(**defaults)
@@ -453,7 +455,7 @@ class TestPointLensRenormWorkflow(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='point_lens',
+            fit_type='point_lens',
             renormalize_errors=True,
             parallax_grid=True)
         defaults.update(kwargs)
@@ -527,7 +529,7 @@ class TestBinaryLensWorkflow(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='binary_lens',
+            fit_type='binary_lens',
             renormalize_errors=True,
             parallax_grid=True)
         defaults.update(kwargs)
@@ -652,7 +654,7 @@ class TestPointLensWorkflowWithInitialResults(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='point_lens',
+            fit_type='point_lens',
             renormalize_errors=False,
             initial_results=INITIAL_RESULTS)
         defaults.update(kwargs)
@@ -667,7 +669,7 @@ class TestPointLensWorkflowWithInitialResults(unittest.TestCase):
     def test_dry_run_skips_est_pl_params(self):
         """
         When a static PSPL is supplied via initial_results with
-        fit_types='point_lens', planned_steps starts at fit_pspl,
+        fit_type='point_lens', planned_steps starts at fit_pspl,
         skipping est_pl_params.
         """
         fitter = self._make_fitter(dry_run=True)
@@ -711,7 +713,7 @@ class TestBinaryLensWorkflowWithInitialResults(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='binary_lens',
+            fit_type='binary_lens',
             renormalize_errors=False,
             initial_results=INITIAL_RESULTS)
         defaults.update(kwargs)
@@ -724,7 +726,7 @@ class TestBinaryLensWorkflowWithInitialResults(unittest.TestCase):
     def test_dry_run_starts_at_search_for_anomaly(self):
         """
         When a static PSPL is supplied via initial_results with
-        fit_types='binary_lens', planned_steps starts at search_for_anomaly,
+        fit_type='binary_lens', planned_steps starts at search_for_anomaly,
         skipping all point-lens stages.
         """
         fitter = self._make_fitter(dry_run=True)
@@ -776,7 +778,7 @@ class TestBinaryLensRestartFromPointLens(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='binary_lens',
+            fit_type='binary_lens',
             renormalize_errors=True)
         defaults.update(kwargs)
         return MMEXOFASTFitter(restart_file=restart_file, **defaults)
@@ -784,7 +786,7 @@ class TestBinaryLensRestartFromPointLens(unittest.TestCase):
     def test_binary_steps_added_after_point_lens_restart(self):
         """
         Restarting from a completed point-lens run (renormalize_errors=True,
-        parallax_grid=False) with fit_types='binary_lens' produces a step
+        parallax_grid=False) with fit_type='binary_lens' produces a step
         queue that starts at search_for_anomaly.
         """
         pl_completed = _make_noop_steps(
@@ -823,7 +825,7 @@ class TestExecutionLoopDynamicSteps(unittest.TestCase):
         fitter = MMEXOFASTFitter(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='point_lens',
+            fit_type='point_lens',
             renormalize_errors=False,
             stop_after='fit_static_point_lens:est_pl_params')
 
@@ -845,7 +847,7 @@ class TestExecutionLoopDynamicSteps(unittest.TestCase):
         fitter = MMEXOFASTFitter(
             files=OB05390_FILES,
             coords=OB05390_COORDS,
-            fit_types='binary_lens',
+            fit_type='binary_lens',
             renormalize_errors=True,
             parallax_grid=True,
             stop_after='check_binary_renorm:check_needs_renorm')
@@ -899,26 +901,26 @@ class TestSelectBestPointLensModel(unittest.TestCase):
         defaults = dict(
             files=GROUND_DATA_FILES,
             coords=COORDS,
-            fit_types='point lens',
+            fit_type='point lens',
             renormalize_errors=False)
         defaults.update(kwargs)
         return MMEXOFASTFitter(**defaults)
 
     def _make_static_key(self, locations_used=None):
-        return mmexo.fit_types.FitKey(
-            lens_type=mmexo.fit_types.LensType.POINT,
-            source_type=mmexo.fit_types.SourceType.POINT,
-            parallax_branch=mmexo.fit_types.ParallaxBranch.NONE,
-            lens_orb_motion=mmexo.fit_types.LensOrbMotion.NONE,
+        return fit_types.FitKey(
+            lens_type=fit_types.LensType.POINT,
+            source_type=fit_types.SourceType.POINT,
+            parallax_branch=fit_types.ParallaxBranch.NONE,
+            lens_orb_motion=fit_types.LensOrbMotion.NONE,
             locations_used=locations_used,
         )
 
-    def _make_parallax_key(self, branch=mmexo.fit_types.ParallaxBranch.U0_PLUS):
-        return mmexo.fit_types.FitKey(
-            lens_type=mmexo.fit_types.LensType.POINT,
-            source_type=mmexo.fit_types.SourceType.POINT,
+    def _make_parallax_key(self, branch=fit_types.ParallaxBranch.U0_PLUS):
+        return fit_types.FitKey(
+            lens_type=fit_types.LensType.POINT,
+            source_type=fit_types.SourceType.POINT,
             parallax_branch=branch,
-            lens_orb_motion=mmexo.fit_types.LensOrbMotion.NONE,
+            lens_orb_motion=fit_types.LensOrbMotion.NONE,
         )
 
     def _make_record(self, key, chi2_value=None):
@@ -956,10 +958,10 @@ class TestSelectBestPointLensModel(unittest.TestCase):
     def test_parallax_fits_only_returns_best_chi2(self):
         fitter = self._make_fitter()
         better = self._make_record(
-            self._make_parallax_key(mmexo.fit_types.ParallaxBranch.U0_PLUS),
+            self._make_parallax_key(fit_types.ParallaxBranch.U0_PLUS),
             chi2_value=80.0)
         worse = self._make_record(
-            self._make_parallax_key(mmexo.fit_types.ParallaxBranch.U0_MINUS),
+            self._make_parallax_key(fit_types.ParallaxBranch.U0_MINUS),
             chi2_value=120.0)
         fitter.all_fit_results.set(better)
         fitter.all_fit_results.set(worse)

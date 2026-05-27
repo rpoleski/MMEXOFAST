@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 
 import mmexofast as mmexo
 from mmexofast import gridsearches
+from mmexofast.config import DATA_PATH
 
 
 class TestEventFinderGridSearch_1(unittest.TestCase):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'pspl4EF_1.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'pspl4EF_1.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')
@@ -77,7 +78,7 @@ class TestEventFinderGridSearch_1(unittest.TestCase):
 class TestEventFinderGridSearch_2(TestEventFinderGridSearch_1):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'pspl4EF_2.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'pspl4EF_2.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')
@@ -148,7 +149,7 @@ class TestEFSFitFunction(unittest.TestCase):
 class TestAnomalyFinderGridSearch(unittest.TestCase):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'planet4AF.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'planet4AF.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')

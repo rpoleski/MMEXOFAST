@@ -6,12 +6,13 @@ import pytest
 
 import mmexofast as mmexo
 from mmexofast import fitters
+from mmexofast.config import DATA_PATH
 
 
 class TestSFitFitter_1(unittest.TestCase):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'pspl4EF_1.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'pspl4EF_1.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')
@@ -53,7 +54,7 @@ class TestSFitFitter_1(unittest.TestCase):
 class TestSFitFitter_2(TestSFitFitter_1):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'pspl4EF_2.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'pspl4EF_2.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')
@@ -64,7 +65,7 @@ class TestSFitFitter_2(TestSFitFitter_1):
 class TestWidePlanetFitter(unittest.TestCase):
 
     def setUp(self):
-        datafile = os.path.join(mmexo.DATA_PATH, 'unit_test_data', 'planet4AF.dat')
+        datafile = os.path.join(DATA_PATH, 'unit_test_data', 'planet4AF.dat')
         self.data = mm.MulensData(
             file_name= datafile,
             phot_fmt='mag')

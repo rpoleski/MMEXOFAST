@@ -12,6 +12,8 @@ from mmexofast.unit_tests.test_utils import (
     create_mock_fitter,
     create_mock_params_and_sigmas,
 )
+from mmexofast.config import DATA_PATH
+
 
 
 class TestMMEXOFASTFitResults(unittest.TestCase):
@@ -831,7 +833,7 @@ class TestIntermediateResults(unittest.TestCase):
         """
         fitter = mmexo.MMEXOFASTFitter(
             files=[os.path.join(
-                mmexo.DATA_PATH, 'OB140939',
+                DATA_PATH, 'OB140939',
                 'n20100310.I.OGLE.OB140939.txt')],
             coords='17:47:12.25 -21:22:58.7',
             fit_type='point lens',
@@ -851,7 +853,7 @@ class TestIntermediateResults(unittest.TestCase):
         """
         fitter = mmexo.MMEXOFASTFitter(
             files=[os.path.join(
-                mmexo.DATA_PATH, 'OB140939',
+                DATA_PATH, 'OB140939',
                 'n20100310.I.OGLE.OB140939.txt')],
             coords='17:47:12.25 -21:22:58.7',
             fit_type='point lens',

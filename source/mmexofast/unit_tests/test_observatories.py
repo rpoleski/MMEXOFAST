@@ -3,6 +3,7 @@ import unittest
 
 import mmexofast as mmexo
 from mmexofast import observatories
+from mmexofast.config import DATA_PATH
 
 
 class TestGetTelescopeBandFromFilename(unittest.TestCase):
@@ -12,7 +13,7 @@ class TestGetTelescopeBandFromFilename(unittest.TestCase):
         """Test standard format with WFIRST telescope."""
         telescope, band = observatories.get_telescope_band_from_filename(
             os.path.join(
-                mmexo.DATA_PATH, '2018DataChallenge',
+                DATA_PATH, '2018DataChallenge',
                 'n20180816.W149.WFIRST18.004.txt')
         )
         self.assertEqual(telescope, 'WFIRST18')
@@ -110,7 +111,7 @@ class TestObservatory(unittest.TestCase):
         self.assertEqual(kwargs['phot_fmt'], 'flux')
         self.assertEqual(kwargs['usecols'], [0, 1, 2])
         self.assertEqual(kwargs['ephemerides_file'],
-                         os.path.join(mmexo.DATA_PATH, '2018DataChallenge',
+                         os.path.join(DATA_PATH, '2018DataChallenge',
                                       'wfirst_ephemeris_W149.txt'))
 
     def test_get_kwargs_basic(self):
@@ -156,7 +157,7 @@ class TestGetKwargs(unittest.TestCase):
     def test_known_observatory_wfirst(self):
         """Test kwargs for known observatory (WFIRST18)."""
         filename = os.path.join(
-            mmexo.DATA_PATH, '2018DataChallenge',
+            DATA_PATH, '2018DataChallenge',
             'n20180816.Z087.WFIRST18.004.txt')
 
         results = observatories.get_kwargs(filename)
@@ -165,7 +166,7 @@ class TestGetKwargs(unittest.TestCase):
         self.assertEqual(results['phot_fmt'], 'flux')
         self.assertEqual(results['usecols'], [0, 1, 2])
         self.assertEqual(results['ephemerides_file'],
-                         os.path.join(mmexo.DATA_PATH, '2018DataChallenge',
+                         os.path.join(DATA_PATH, '2018DataChallenge',
                                       'wfirst_ephemeris_W149.txt'))
         self.assertEqual(results['bandpass'], 'Z087')
 

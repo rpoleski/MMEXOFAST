@@ -26,20 +26,20 @@ import pytest
 import mmexofast as mmexo
 from mmexofast.gridsearches import ParallaxGridSearch, BaseRectGridSearch
 from MulensModel import MulensData
-
+from mmexofast.config import DATA_PATH
 
 # ---------------------------------------------------------------------------
 # Block 1 — Data File, Coordinates, and Dataset
 # ---------------------------------------------------------------------------
 
 DATA_FILE = os.path.join(
-    mmexo.DATA_PATH,
+    DATA_PATH,
     'OB140939',
     'n20100310.I.OGLE.OB140939.txt',
 )
 
 COORDS_FILE = os.path.join(
-    mmexo.DATA_PATH,
+    DATA_PATH,
     'OB140939',
     'coords.txt',
 )
@@ -217,7 +217,7 @@ def refinement_result(tmp_path_factory):
 
 def test_imports():
     """Smoke test: verify the full import chain is healthy before any test runs."""
-    assert mmexo.DATA_PATH is not None
+    assert DATA_PATH is not None
     assert ParallaxGridSearch is not None
     assert BaseRectGridSearch is not None
     assert MulensData is not None
@@ -234,8 +234,8 @@ def test_data_file_exists():
     """
     assert os.path.isfile(DATA_FILE), (
         f"Required data file not found: {DATA_FILE}\n"
-        f"mmexo.DATA_PATH resolves to: {mmexo.DATA_PATH}\n"
-        "Check the data directory structure and mmexo.DATA_PATH definition."
+        f"DATA_PATH resolves to: {DATA_PATH}\n"
+        "Check the data directory structure and mmexofast/config.DATA_PATH definition."
     )
 
 
