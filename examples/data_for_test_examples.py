@@ -2,7 +2,7 @@ import os.path
 import exozippy as mmexo
 import MulensModel
 
-dir_ = os.path.join(mmexo.MULENS_DATA_PATH, "2018DataChallenge")
+dir_ = os.path.join(mmexo.MULENS_DATA_PATH, "../2018DataChallenge")
 
 # Test data
 lc_num = 4

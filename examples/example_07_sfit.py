@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 import MulensModel
 import exozippy as mmexo
-from data_for_test_examples import datasets
+from examples.data_for_test_examples import datasets
 
 results_EF = {'t_0': 2460023.2844586717, 't_eff': 9.988721231519582,
               'j': 2, 'chi2': -42226.356330652685}

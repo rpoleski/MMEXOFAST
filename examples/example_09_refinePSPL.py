@@ -1,7 +1,7 @@
 """
 Refine the PSPL fit after masking the anomaly
 """
-from data_for_test_examples import datasets
+from examples.data_for_test_examples import datasets
 import exozippy as mmexo
 import MulensModel
 import matplotlib.pyplot as plt

@@ -2,12 +2,10 @@
 Example to check that the EventFinderGridSearch, EFSFit, and
 EFMagnificationCurve classes work as expected.
 """
-import numpy as np
 import matplotlib.pyplot as plt
 
-import MulensModel
 import exozippy as mmexo
-from data_for_test_examples import datasets, data_w149
+from examples.data_for_test_examples import datasets, data_w149
 
 
 # Do the EF search

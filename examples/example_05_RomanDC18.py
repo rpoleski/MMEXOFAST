@@ -7,11 +7,11 @@ import numpy as np
 import exozippy
 import traceback
 
-from DC18_classes import dir_, TestDataSet
+from examples.DC18_classes import dir_, TestDataSet
 
 
 base_dir = os.path.join(
-            exozippy.MODULE_PATH, 'EXOZIPPy', 'DC18Test', 'temp_output', 'no_par')
+            exozippy.MODULE_PATH, 'EXOZIPPy', '../DC18Test', 'temp_output', 'no_par')
 
 
 def fit_lc(lc_num, verbose=False):

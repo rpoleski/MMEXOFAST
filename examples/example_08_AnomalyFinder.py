@@ -8,7 +8,7 @@ import re, ast
 
 import MulensModel
 import exozippy as mmexo
-from DC18_classes import TestDataSet
+from examples.DC18_classes import TestDataSet
 
 
 class AnomalyFinderTest:
@@ -30,7 +30,7 @@ class AnomalyFinderTest:
     def pspl_params(self):
         if self._pspl_params is None:
             log_file = os.path.join(
-                mmexo.MODULE_PATH, 'EXOZIPPy', 'DC18Test', 'temp_output',
+                mmexo.MODULE_PATH, 'EXOZIPPy', '../DC18Test', 'temp_output',
                 f'W{self.lc_num:03}', f'WFIRST.{self.lc_num:03}.log')
             with open(log_file) as f:
                 for line in reversed(f.readlines()):

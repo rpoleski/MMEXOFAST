@@ -6,7 +6,7 @@ u0        alpha       t0         tE        rE       thetaE    piE     rhos
 0.00273006 49.2163 83.7988 270.63 0.0109202 2.48124 686.808
 """
 
-from data_for_test_examples import datasets
+from examples.data_for_test_examples import datasets
 import exozippy as mmexo
 import MulensModel
 import matplotlib.pyplot as plt
