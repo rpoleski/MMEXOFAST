@@ -356,6 +356,8 @@ class MMEXOFASTFitter:
         Mapping of dataset label to source flux fixing flag.
     renormalize_errors : bool
         Whether to renormalize dataset errors during the workflow.
+    no_parallax : bool
+        Whether to include parallax in the fitting workflow. Default is False (include parallax)
     parallax_grid : bool
         Whether to run a parallax grid search.
     primary_location : str, optional
@@ -454,6 +456,7 @@ class MMEXOFASTFitter:
         'fix_blend_flux',
         'fix_source_flux',
         'renormalize_errors',
+        'no_parallax',
         'parallax_grid',
         'primary_location',
         'primary_dataset',
@@ -491,6 +494,7 @@ class MMEXOFASTFitter:
         fix_blend_flux=None,
         fix_source_flux=None,
         renormalize_errors: bool = True,
+        no_parallax: bool = False,
         parallax_grid: bool = False,
         primary_location=None,
         primary_dataset=None,
@@ -910,6 +914,7 @@ class MMEXOFASTFitter:
         steps.extend(self._build_event_search_steps())
         steps.extend(self._build_static_fit_steps())
         steps.extend(self._build_parallax_steps())
+
         if self.renormalize_errors:
             steps.extend(self._build_renormalize_steps())
         return steps
@@ -1023,6 +1028,9 @@ class MMEXOFASTFitter:
         -------
         list of WorkflowStep
         """
+        if self.no_parallax:
+           return []
+
         steps = []
         for key in self._iter_parallax_point_lens_keys():
             branch = key.parallax_branch
