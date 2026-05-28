@@ -1686,7 +1686,7 @@ class MMEXOFASTFitter:
             fig.savefig(self._output_config.plot_path('af_grid'))
             plt.close(fig)
             logger.info(
-                'Saved EF grid plot to %s.',
+                'Saved AF grid plot to %s.',
                 self._output_config.plot_path('ef_grid'),
             )
 
@@ -1733,37 +1733,32 @@ class MMEXOFASTFitter:
         Stores estimates in
         ``self.intermediate_results.est_binary_params``.
         """
-
+        est_params = {}
+        estimator_class = None
         if self.intermediate_results.anomaly_type == 'wide':
-            est_params = {}
-
-            estimator = WidePlanetGridSearchEstimator(
-                datasets=self.datasets,
-                params=self.intermediate_results.anomaly_lc_params,
-                coords=self.coords,
-            )
-            estimator.run()
-            params = estimator.binary_params
-            logger.info('Estimated binary params: %s', params.ulens)
-            logger.info('mag_methods: %s', params.mag_methods)
-            est_params['wide'] = params
-
+            estimator_class = WidePlanetGridSearchEstimator
         elif self.intermediate_results.anomaly_type == 'close':
-            est_params = {}
+            estimator_class = ClosePlanetGridSearchEstimator
+        else:
+            logger.info('Binary params estimate not implemented for %s', self.intermediate_results.anomaly_type)
 
-            estimator = ClosePlanetGridSearchEstimator(
+        if estimator_class is not None:
+            estimator = estimator_class(
                 datasets=self.datasets,
                 params=self.intermediate_results.anomaly_lc_params,
                 coords=self.coords,
             )
             estimator.run()
+
             params = estimator.binary_params
             logger.info('Estimated binary params: %s', params.ulens)
             logger.info('mag_methods: %s', params.mag_methods)
-            est_params['close'] = params
-        else:
-            est_params = None
-            logger.info('Binary params estimate not implemented for ', self.intermediate_results.anomaly_type)
+            est_params[f'{self.intermediate_results.anomaly_type}'] = params
+
+            if self.intermediate_results.anomaly_type in ['close', 'wide']:
+                s_dagger = estimator.alternate_params
+                logger.info('Alternate s_dagger solution: %s', s_dagger.ulens)
+                est_params[f'{self.intermediate_results.anomaly_type}_alt'] = s_dagger
 
         self.intermediate_results.est_binary_params = est_params
         if (self._output_config is not None) and self._output_config.save_plots:
