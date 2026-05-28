@@ -1652,16 +1652,12 @@ class MMEXOFASTFitter:
         ``MulensData`` objects in flux format, for use by
         ``run_af_grid()``.
         """
-        best = self.select_best_point_lens_model()
+        reference_fit = self.select_best_point_lens_model()
+        reference_model = reference_fit.full_result.fitter.get_model()
         logger.info('Calculating residuals relative to %s',
-                    model_key_to_label(best.model_key))
+                    model_key_to_label(reference_fit.model_key))
 
-        event = MulensModel.Event(
-            datasets=self.datasets,
-            model=MulensModel.Model(best.params),
-            coords=self.coords
-            # TODO: Tracking inputs to Model and Event is going to be a problem when fixed fluxes are implemented.
-        )
+        event = MulensModel.Event(datasets=self.datasets, model=reference_model)
         event.fit_fluxes()
 
         self.residuals: list = []
