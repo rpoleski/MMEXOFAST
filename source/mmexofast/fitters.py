@@ -1,14 +1,12 @@
 import MulensModel
 import numpy as np
-import pandas as pd
 import sfit_minimizer as sfit
 import emcee
 from multiprocessing import Pool, cpu_count
 import os
 
-
-import numpy as np
 from .estimate_params import WidePlanetEnsembleInitializer
+from .mulens_object_config import ModelConfig, EventConfig
 
 
 class MinimalResults:
@@ -98,19 +96,15 @@ class MulensFitter():
         Dict mapping parameter names to step sizes. Parameters
         not in the dict default to ``None``.
     mag_methods : list, optional
-        Magnification methods specification; see MulensModel.Model.set_magnification_methods.
-    coords : str or astropy.SkyCoord, optional
-        Sky coordinates of the event.
-    limb_darkening_coeffs_gamma : dict, optional
-        Limb darkening gamma coefficients keyed by photometric band.
-    limb_darkening_coeffs_u : dict, optional
-        Limb darkening u coefficients keyed by photometric band.
-    fix_source_flux : dict, optional
-        Source flux(es) to hold fixed. The dataset is the key and the value to
-        be fixed is the value. See MulensModel.Event and MulensModel.FitData.
-    fix_blend_flux : dict, optional
-        Blend flux to hold fixed. The dataset is the key and the value to
-        be fixed is the value. See MulensModel.Event and MulensModel.FitData.
+        Magnification methods specification; see
+        MulensModel.Model.set_magnification_methods. Passed directly to
+        ``get_model()`` since it varies per model type.
+    model_config : ModelConfig, optional
+        Configuration for Model construction (coords, limb darkening, etc.).
+        If None, a default ``ModelConfig`` is used.
+    event_config : EventConfig, optional
+        Configuration for Event construction (coords, flux fixing, etc.).
+        If None, a default ``EventConfig`` is used.
     verbose : bool, optional
         If True, print progress information. Default is False.
     pool : multiprocessing.Pool, optional
@@ -119,9 +113,7 @@ class MulensFitter():
 
     def __init__(
             self, datasets=None, initial_model_params=None, parameters_to_fit=None, sigmas=None,
-            mag_methods=None, coords=None, limb_darkening_coeffs_gamma=None,
-            limb_darkening_coeffs_u=None,
-            fix_source_flux=None, fix_blend_flux=None,
+            mag_methods=None, model_config=None, event_config=None,
             verbose=False, pool=None):
         self._initial_model = None
         self._best = None
@@ -134,12 +126,12 @@ class MulensFitter():
         self.sigmas = sigmas
 
         self.mag_methods = mag_methods
-        self.limb_darkening_coeffs_gamma = limb_darkening_coeffs_gamma
-        self.limb_darkening_coeffs_u = limb_darkening_coeffs_u
-        self.fix_source_flux = fix_source_flux
-        self.fix_blend_flux = fix_blend_flux
-
-        self.coords = coords
+        self.model_config = (
+            model_config if model_config is not None else ModelConfig()
+        )
+        self.event_config = (
+            event_config if event_config is not None else EventConfig()
+        )
 
         self.verbose = verbose
         self.pool = pool
@@ -159,46 +151,39 @@ class MulensFitter():
 
     def get_model(self):
         """
-        Create a MulensModel.Model with best-fit parameters, or initial parameters
-        if no fit has been run yet.
+        Create a MulensModel.Model with best-fit parameters, or initial
+        parameters if no fit has been run yet.
 
-        If set, magnification methods and limb darkening coefficients (u or gamma)
-        are applied to the model before returning.
+        Magnification methods and limb darkening coefficients are applied
+        via ``model_config``, which is built from the constructor arguments
+        at initialization time.
 
         Returns
         -------
         MulensModel.Model
-            Model with best-fit or initial parameters, with magnification methods
-            and limb darkening coefficients applied if provided.
+            Configured model with best-fit or initial parameters.
+
+        See Also
+        --------
+        get_event : Creates a MulensModel.Event using this model.
         """
-        # Use best-fit if available, else initial
         if self.best is not None:
             params = dict(self.best)
-            params.pop('chi2', None)  # Remove chi2 key
+            params.pop('chi2', None)
         else:
             params = self.initial_model_params
 
-        model = MulensModel.Model(params)
-
-        # Apply magnification methods
-        if self.mag_methods is not None:
-            model.set_magnification_methods(self.mag_methods)
-
-        # Apply limb darkening coefficients
-        if self.limb_darkening_coeffs_u is not None:
-            for band, value in self.limb_darkening_coeffs_u.items():
-                model.set_limb_coeff_u(band, value)
-
-        if self.limb_darkening_coeffs_gamma is not None:
-            for band, value in self.limb_darkening_coeffs_gamma.items():
-                model.set_limb_coeff_gamma(band, value)
-
-        return model
+        return self.model_config.build(
+            parameters=params,
+            magnification_methods=self.mag_methods,
+        )
 
     def get_event(self):
         """
-        Create a MulensModel.Event using the current datasets, model, coordinates,
-        and any fixed source or blend fluxes.
+        Create a MulensModel.Event using the current datasets and model.
+
+        Coordinates and flux-fixing are applied via ``event_config``, which
+        is built from the constructor arguments at initialization time.
 
         Returns
         -------
@@ -209,11 +194,10 @@ class MulensFitter():
         --------
         get_model : Creates the MulensModel.Model used by this event.
         """
-        event = MulensModel.Event(
-            datasets=self.datasets, model=self.get_model(), coords=self.coords,
-            fix_source_flux=self.fix_source_flux, fix_blend_flux=self.fix_blend_flux)
-
-        return event
+        return self.event_config.build(
+            model=self.get_model(),
+            datasets=self.datasets,
+        )
 
     def get_diagnostic_str(self):
         """
@@ -912,6 +896,9 @@ class WidePlanetFitter(AnomalyFitter):
 
         Requires ``self.initial_model`` and ``self.mag_methods`` to be set,
         which happens as side effects of accessing ``starting_vector``.
+        Coordinates and flux-fixing are applied via the inherited
+        ``event_config``, which is built from the constructor arguments
+        passed through ``MulensFitter.__init__``.
 
         Raises
         ------
@@ -922,15 +909,19 @@ class WidePlanetFitter(AnomalyFitter):
             raise AttributeError(
                 'initial_model is not set. Access starting_vector first.')
 
-        model = MulensModel.Model(parameters=self.initial_model)
-        model.default_magnification_method = 'point_source_point_lens'
-
         if self.mag_methods is None:
             raise AttributeError(
                 'self.mag_methods is not set. Access starting_vector first.')
 
-        model.set_magnification_methods(self.mag_methods)
-        self._event = MulensModel.Event(datasets=self.datasets, model=model)
+        model = self.model_config.build(
+            parameters=self.initial_model,
+            magnification_methods=self.mag_methods,
+            default_magnification_method='point_source_point_lens',
+        )
+        self._event = self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )
 
     def run(self, verbose=False):
         """

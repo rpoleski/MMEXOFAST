@@ -2905,28 +2905,29 @@ class ParallaxGridSearch(BaseRectGridSearch):
         """
         Validate and return fitter_kwargs.
 
-        Raises ValueError if fitter_kwargs is None, missing the 'coords' key,
-        or has coords=None.  coords is required by SFitFitter for parallax
-        trajectory calculations; without it every grid point silently returns
-        NaN chi2.
+        Raises ValueError if fitter_kwargs is None, missing an 'event_config'
+        key, or has event_config.coords=None. coords is required by SFitFitter
+        for parallax trajectory calculations; without it every grid point
+        silently returns NaN chi2.
         """
         if fitter_kwargs is None:
             raise ValueError(
                 "fitter_kwargs is required and must not be None. "
-                "At minimum, provide fitter_kwargs={'coords': <sky coordinates>}."
+                "At minimum, provide fitter_kwargs={'event_config': "
+                "EventConfig(coords=<sky coordinates>)}."
             )
-        if 'coords' not in fitter_kwargs:
+        if 'event_config' not in fitter_kwargs:
             raise ValueError(
-                "fitter_kwargs must contain the 'coords' key with the sky "
-                "coordinates of the event. Without it, SFitFitter cannot compute "
-                "parallax trajectories and every grid point will silently return "
-                "NaN chi2."
+                "fitter_kwargs must contain an 'event_config' key with the sky "
+                "coordinates of the event set. Without coords, SFitFitter cannot "
+                "compute parallax trajectories and every grid point will silently "
+                "return NaN chi2."
             )
-        if fitter_kwargs['coords'] is None:
+        if fitter_kwargs['event_config'].coords is None:
             raise ValueError(
-                "fitter_kwargs['coords'] must not be None. Provide the sky "
-                "coordinates of the event as a string or MulensModel coordinate "
-                "object."
+                "fitter_kwargs['event_config'].coords must not be None. Provide "
+                "the sky coordinates of the event as a string or MulensModel "
+                "coordinate object."
             )
         return fitter_kwargs
 

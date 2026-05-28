@@ -23,10 +23,12 @@ import os
 import numpy as np
 import pytest
 
+from MulensModel import MulensData
+
 import mmexofast as mmexo
 from mmexofast.gridsearches import ParallaxGridSearch, BaseRectGridSearch
-from MulensModel import MulensData
 from mmexofast.config import DATA_PATH
+from mmexofast.mulens_object_config import ModelConfig, EventConfig
 
 # ---------------------------------------------------------------------------
 # Block 1 — Data File, Coordinates, and Dataset
@@ -47,10 +49,10 @@ with open(COORDS_FILE) as _f:
     COORDS = _f.read().strip()
 
 # fitter_kwargs passed to every ParallaxGridSearch instantiation.
-# Only coords is required; all other SFitFitter keyword arguments
-# (mag_methods, limb_darkening_coeffs_u, limb_darkening_coeffs_gamma,
-# fix_source_flux, fix_blend_flux) are left as None (their defaults).
-FITTER_KWARGS = {'coords': COORDS}
+FITTER_KWARGS = {
+    'model_config': ModelConfig(coords=COORDS),
+    'event_config': EventConfig(coords=COORDS),
+}
 
 # Loaded once at module import time; shared by all tests in this suite.
 _MULENS_KWARGS = mmexo.observatories.get_kwargs(DATA_FILE)
@@ -973,29 +975,25 @@ class TestFitterKwargs:
     """
     Tests for fitter_kwargs validation in ParallaxGridSearch.__init__.
 
-    ParallaxGridSearch requires fitter_kwargs to be a dict containing a
-    non-None 'coords' value.  coords is the sky coordinates of the event,
-    required by SFitFitter for parallax trajectory calculations.  Without
-    it, every grid point evaluation silently produces NaN chi2, making the
-    grid search appear to succeed while producing no usable results.
-
-    These tests verify that __init__ detects and rejects invalid
-    configurations before any computation begins.
+    ParallaxGridSearch requires fitter_kwargs to be a dict containing an
+    'event_config' key with a non-None coords value. coords is the sky
+    coordinates of the event, required by SFitFitter for parallax trajectory
+    calculations. Without it, every grid point evaluation silently produces
+    NaN chi2, making the grid search appear to succeed while producing no
+    usable results.
 
     Tests
     -----
-    test_fitter_kwargs_stored_correctly  — valid kwargs stored as self.fitter_kwargs
-    test_raises_if_fitter_kwargs_omitted — fitter_kwargs=None → ValueError at __init__
-    test_raises_if_coords_key_missing    — 'coords' key absent → ValueError at __init__
-    test_raises_if_coords_is_none        — coords=None → ValueError at __init__
-
-    No shared class fixture. None of the tests call run().
+    test_fitter_kwargs_stored_correctly    — valid kwargs stored as self.fitter_kwargs
+    test_raises_if_fitter_kwargs_omitted   — fitter_kwargs=None → ValueError at __init__
+    test_raises_if_event_config_missing    — 'event_config' key absent → ValueError at __init__
+    test_raises_if_coords_is_none          — event_config.coords=None → ValueError at __init__
     """
 
     def test_fitter_kwargs_stored_correctly(self):
         """
         Valid fitter_kwargs is stored on the instance as self.fitter_kwargs
-        with the 'coords' key present and non-None.
+        with 'event_config' present and event_config.coords non-None.
         """
         searcher = ParallaxGridSearch(
             static_params=STATIC_PARAMS_PAR,
@@ -1006,11 +1004,11 @@ class TestFitterKwargs:
         assert searcher.fitter_kwargs is not None, (
             "fitter_kwargs should not be None after construction"
         )
-        assert 'coords' in searcher.fitter_kwargs, (
-            "fitter_kwargs should contain the 'coords' key"
+        assert 'event_config' in searcher.fitter_kwargs, (
+            "fitter_kwargs should contain the 'event_config' key"
         )
-        assert searcher.fitter_kwargs['coords'] is not None, (
-            "fitter_kwargs['coords'] should not be None"
+        assert searcher.fitter_kwargs['event_config'].coords is not None, (
+            "fitter_kwargs['event_config'].coords should not be None"
         )
 
     def test_raises_if_fitter_kwargs_omitted(self):
@@ -1029,26 +1027,26 @@ class TestFitterKwargs:
                 # fitter_kwargs intentionally omitted
             )
 
-    def test_raises_if_coords_key_missing(self):
+    def test_raises_if_event_config_missing(self):
         """
-        Providing fitter_kwargs without the 'coords' key raises ValueError
-        at construction time.
+        Providing fitter_kwargs without the 'event_config' key raises
+        ValueError at construction time.
 
-        Other SFitFitter keyword arguments are optional; coords is the only
-        required key.
+        event_config is the only required key; it must carry a non-None
+        coords for SFitFitter to compute parallax trajectories.
         """
         with pytest.raises(ValueError):
             ParallaxGridSearch(
                 static_params=STATIC_PARAMS_PAR,
                 datasets=DATASETS,
                 grid_params=COARSE_GRID_PARAMS,
-                fitter_kwargs={'mag_methods': None},  # 'coords' key intentionally absent
+                fitter_kwargs={'model_config': ModelConfig()},  # 'event_config' key intentionally absent
             )
 
     def test_raises_if_coords_is_none(self):
         """
-        Providing fitter_kwargs with coords=None raises ValueError at
-        construction time.
+        Providing fitter_kwargs with event_config.coords=None raises
+        ValueError at construction time.
 
         A None coords is equivalent to omitting it — SFitFitter cannot
         compute parallax trajectories without a valid sky coordinate.
@@ -1058,5 +1056,5 @@ class TestFitterKwargs:
                 static_params=STATIC_PARAMS_PAR,
                 datasets=DATASETS,
                 grid_params=COARSE_GRID_PARAMS,
-                fitter_kwargs={'coords': None},
+                fitter_kwargs={'event_config': EventConfig(coords=None)},
             )

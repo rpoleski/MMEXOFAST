@@ -14,6 +14,8 @@ from mmexofast import MMEXOFASTFitter, WorkflowStep
 from mmexofast.fitters import MulensFitter
 from mmexofast.config import DATA_PATH
 from mmexofast import fit_types
+from mmexofast.mulens_object_config import ModelConfig, EventConfig
+
 
 # OB05390
 OB05390_FILES = sorted(glob.glob(os.path.join(
@@ -859,7 +861,9 @@ class TestExecutionLoopDynamicSteps(unittest.TestCase):
             datasets=fitter.datasets,
             initial_model_params=BINARY_PARAMS,
             mag_methods=[2453591., 'VBBL', 2453594.],
-            coords=OB05390_COORDS)
+            model_config=ModelConfig(coords=OB05390_COORDS),
+            event_config=EventConfig(coords=OB05390_COORDS),
+        )
         binary_fitter.best = binary_fitter.initial_model_params
         binary_fitter.best['chi2'] = 562.
 

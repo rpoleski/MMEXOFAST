@@ -18,9 +18,37 @@ import warnings
 #import copy
 
 import MulensModel
+from .mulens_object_config import ModelConfig, EventConfig
 
 
-def get_PSPL_params(ef_grid_point, datasets, verbose=False):
+def get_PSPL_params(ef_grid_point, datasets, model_config=None, event_config=None, verbose=False):
+    """
+    Estimate initial PSPL parameters by grid search over u_0 and t_E.
+
+    Parameters
+    ----------
+    ef_grid_point : dict
+        Best point from the EventFinder grid search. Must contain ``'t_0'``.
+    datasets : list of MulensModel.MulensData
+        Photometric datasets to evaluate chi2 against.
+    model_config : ModelConfig, optional
+        Configuration for Model construction. If None, a default
+        ``ModelConfig`` is used (no coords, no limb darkening).
+    event_config : EventConfig, optional
+        Configuration for Event construction. If None, a default
+        ``EventConfig`` is used (no coords, no flux fixing).
+    verbose : bool, optional
+        If True, print progress. Default is False.
+
+    Returns
+    -------
+    dict
+        Best-fit parameter dictionary with keys ``'t_0'``, ``'u_0'``,
+        ``'t_E'``.
+    """
+    _model_config = model_config if model_config is not None else ModelConfig()
+    _event_config = event_config if event_config is not None else EventConfig()
+
     t_0 = ef_grid_point['t_0']
     u_0s = [0.01, 0.1, 0.3, 1.0, 1.5]
     t_Es = [1., 3., 10., 20., 40., 100.]
@@ -29,13 +57,11 @@ def get_PSPL_params(ef_grid_point, datasets, verbose=False):
     for u_0 in u_0s:
         for t_E in t_Es:
             params = {'t_0': t_0, 't_E': t_E, 'u_0': u_0}
-            event = MulensModel.Event(
-                datasets=datasets, model=MulensModel.Model(params))
+            model = _model_config.build(parameters=params)
+            event = _event_config.build(model=model, datasets=datasets)
             if event.get_chi2() < best_chi2:
                 best_params = params
                 best_chi2 = event.chi2
-
-            #print(u_0, t_E, event.chi2)
 
     return best_params
 
@@ -302,6 +328,14 @@ class WidePlanetGridSearchEstimator(WidePlanetParameterEstimator):
         params: *dict*
             Anomaly parameters. See WidePlanetParameterEstimator for details.
 
+        model_config : ModelConfig, optional
+            Configuration for Model construction. If None, a default
+            ``ModelConfig`` is used (no coords, no limb darkening).
+
+        event_config : EventConfig, optional
+            Configuration for Event construction. If None, a default
+            ``EventConfig`` is used (no coords, no flux fixing).
+
         d_alpha: *float*, optional
             Step size for alpha grid. Defaults to 0.1.
 
@@ -344,7 +378,7 @@ class WidePlanetGridSearchEstimator(WidePlanetParameterEstimator):
     hardcoding ['alpha', 's', 'q', 'rho'].
     """
 
-    def __init__(self, datasets, params, coords=None,
+    def __init__(self, datasets, params, model_config=None, event_config=None,
                  d_alpha=None, n_alpha=None,
                  d_s=None, n_s=None,
                  log_q_values=None, log_rho_values=None,
@@ -353,7 +387,9 @@ class WidePlanetGridSearchEstimator(WidePlanetParameterEstimator):
                  nelder_mead_options=None):
         super().__init__(params)
         self.datasets = datasets
-        self.coords = coords
+        self.model_config = model_config if model_config is not None else ModelConfig()
+        self.event_config = event_config if event_config is not None else EventConfig()
+
         self.d_alpha = d_alpha
         self.n_alpha = n_alpha
         self.d_s = d_s
@@ -459,11 +495,32 @@ class WidePlanetGridSearchEstimator(WidePlanetParameterEstimator):
         return self.log_rho_values if self.log_rho_values is not None else np.arange(-4, -1)
 
     def _make_event(self, grid_params):
-        model = MulensModel.Model(grid_params)
-        model.set_magnification_methods(self._base_binary_params.mag_methods)
-        model.default_magnification_method = 'point_source_point_lens'
-        event = MulensModel.Event(datasets=self.datasets, model=model, coords=self.coords,)
-        return event
+        """
+        Create a MulensModel.Event for the given grid parameters.
+
+        Magnification methods and default magnification method are
+        model-type specific and are taken from the base binary parameter
+        estimates. Coordinates and flux-fixing are applied via
+        ``event_config``.
+
+        Parameters
+        ----------
+        grid_params : dict
+            Model parameters for this grid point.
+
+        Returns
+        -------
+        MulensModel.Event
+        """
+        model = self.model_config.build(
+            parameters=grid_params,
+            magnification_methods=self._base_binary_params.mag_methods,
+            default_magnification_method='point_source_point_lens',
+        )
+        return self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )
 
     def _grid_iterator(self):
         return product(
@@ -718,6 +775,14 @@ class WidePlanetEnsembleInitializer():
             Step sizes for PSPL parameter perturbations. Expected keys:
             't_0', 'u_0', 't_E'.
 
+        model_config : ModelConfig, optional
+            Configuration for Model construction. If None, a default
+            ``ModelConfig`` is used (no coords, no limb darkening).
+
+        event_config : EventConfig, optional
+            Configuration for Event construction. If None, a default
+            ``EventConfig`` is used (no coords, no flux fixing).
+
         n_estimators: *int*, optional
             Number of estimators to run. Should equal n_walkers.
             Defaults to 40.
@@ -729,12 +794,14 @@ class WidePlanetEnsembleInitializer():
     # TODO: Hypothesis that this is very slow because the event/Estimator class is getting  created anew every time.
     """
 
-    def __init__(self, datasets, anomaly_params, sigmas, coords=None,
-                 n_estimators=40, pspl_chi2=None):
+    def __init__(self, datasets, anomaly_params, sigmas, model_config=None,
+                 event_config=None, n_estimators=40, pspl_chi2=None):
         self.datasets = datasets
         self.anomaly_params = anomaly_params
         self.sigmas = sigmas
-        self.coords = coords
+        self.model_config = model_config if model_config is not None else ModelConfig()
+        self.event_config = event_config if event_config is not None else EventConfig()
+
         self.n_estimators = n_estimators
         self.pspl_chi2 = pspl_chi2
 
@@ -796,39 +863,61 @@ class WidePlanetEnsembleInitializer():
 
         Override to use different estimator settings.
 
-        Arguments:
-            params: *dict*
-                Anomaly parameters for this estimator.
+        Parameters
+        ----------
+        params : dict
+            Anomaly parameters for this estimator.
+        log_q_values : list, optional
+            If provided, passed as the log_q grid. If None, the
+            estimator uses its default broad grid.
+        log_rho_values : list, optional
+            If provided, passed as the log_rho grid. If None, the
+            estimator uses its default broad grid.
 
-            log_q_values: *list*, optional
-                If provided, passed as the log_q grid. If None, the
-                estimator uses its default broad grid.
-
-            log_rho_values: *list*, optional
-                If provided, passed as the log_rho grid. If None, the
-                estimator uses its default broad grid.
-
-        Returns:
-            best: *dict*
-                Best-fit binary lens parameters.
-
-            mag_methods: *list*
-                Magnification methods from this estimator.
+        Returns
+        -------
+        best : dict
+            Best-fit binary lens parameters.
+        mag_methods : list
+            Magnification methods from this estimator.
         """
         estimator = WidePlanetGridSearchEstimator(
-            datasets=self.datasets, params=params, refine=True,
-            log_q_values=log_q_values, log_rho_values=log_rho_values)
+            datasets=self.datasets,
+            params=params,
+            model_config=self.model_config,
+            event_config=self.event_config,
+            refine=True,
+            log_q_values=log_q_values,
+            log_rho_values=log_rho_values,
+        )
         estimator.run()
         return estimator.binary_params.ulens.copy(), estimator.binary_params.mag_methods
 
     def _evaluate_chi2(self, best, mag_methods):
         """
         Compute chi2 for a set of binary lens parameters.
+
+        Parameters
+        ----------
+        best : dict
+            Binary lens parameter dictionary.
+        mag_methods : list
+            Magnification methods in MulensModel convention.
+
+        Returns
+        -------
+        float
+            Chi2 value for the given parameters.
         """
-        model = MulensModel.Model(parameters=best)
-        model.set_magnification_methods(mag_methods)
-        model.default_magnification_method = 'point_source_point_lens'
-        event = MulensModel.Event(datasets=self.datasets, model=model, coords=self.coords,)
+        model = self.model_config.build(
+            parameters=best,
+            magnification_methods=mag_methods,
+            default_magnification_method='point_source_point_lens',
+        )
+        event = self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )
         return event.get_chi2()
 
     def _run_all_estimators(self):
@@ -950,10 +1039,15 @@ class WidePlanetEnsembleInitializer():
         t_range_anomaly = [self.mag_methods[2], self.mag_methods[8]]
         t_range_vbbl = [self.mag_methods[4], self.mag_methods[6]]
 
-        ref_model = MulensModel.Model(self.initial_model)
-        ref_model.set_magnification_methods(self.mag_methods)
-        ref_model.default_magnification_method = 'point_source_point_lens'
-        ref_event = MulensModel.Event(datasets=self.datasets, model=ref_model, coords=self.coords,)
+        ref_model = self.model_config.build(
+            parameters=self.initial_model,
+            magnification_methods=self.mag_methods,
+            default_magnification_method='point_source_point_lens',
+        )
+        ref_event = self.event_config.build(
+            model=ref_model,
+            datasets=self.datasets,
+        )
         source_flux, blend_flux = ref_event.get_ref_fluxes()
 
         sorted_idx = df['chi2'].argsort().values[::-1]  # worst first
@@ -969,9 +1063,11 @@ class WidePlanetEnsembleInitializer():
                 row = df.iloc[idx]
                 params = {k: row[k] for k in
                           ['t_0', 'u_0', 't_E', 's', 'q', 'rho', 'alpha']}
-                model = MulensModel.Model(params)
-                model.set_magnification_methods(self.mag_methods)
-                model.default_magnification_method = 'point_source_point_lens'
+                model = self.model_config.build(
+                    parameters=params,
+                    magnification_methods=self.mag_methods,
+                    default_magnification_method='point_source_point_lens',
+                )
                 model.plot_lc(source_flux=source_flux, blend_flux=blend_flux,
                               color=cmap(rank), alpha=0.6, t_range=t_range)
 
@@ -1263,15 +1359,19 @@ class AnomalyPropertyEstimator():
     # Could consider whether it would be a good idea to reimplement that.
 
     def __init__(self,
-                 datasets=None, pspl_params=None, af_results=None, coords=None, mask_type='t_eff', n_mask=3,
+                 datasets=None, pspl_params=None, af_results=None,
+                 model_config=None, event_config=None,
+                 mask_type='t_eff', n_mask=3,
                  importance_threshold=0.2):
+
         if isinstance(datasets, MulensModel.MulensData):
             datasets = [datasets]
 
         self.datasets = datasets
         self.pspl_params = pspl_params
         self.af_results = af_results
-        self.coords = coords
+        self.model_config = model_config if model_config is not None else ModelConfig()
+        self.event_config = event_config if event_config is not None else EventConfig()
         self.n_mask = n_mask
         self.importance_threshold = importance_threshold
 
@@ -1298,10 +1398,21 @@ class AnomalyPropertyEstimator():
         self._expected_model_fluxes = None
 
     def get_pspl_event(self):
-        event = MulensModel.Event(datasets=self.datasets,
-                         model=MulensModel.Model(self.pspl_params),
-                         coords=self.coords,
-                        )
+        """
+        Create a MulensModel.Event for the PSPL model.
+
+        Coordinates and flux-fixing are applied via ``event_config``.
+
+        Returns
+        -------
+        MulensModel.Event
+            Event with fluxes fitted.
+        """
+        model = self.model_config.build(parameters=self.pspl_params)
+        event = self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )
         event.fit_fluxes()
         return event
 

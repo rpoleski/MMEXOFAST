@@ -31,6 +31,8 @@ from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType,
 from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
 from .classifier import AnomalyClassifier
 from .observatories import get_kwargs, get_telescope_band_from_filename
+from .mulens_object_config import ModelConfig, EventConfig
+
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +453,16 @@ class MMEXOFASTFitter:
     (e.g. ``'fit_static_point_lens:fit_pspl'``).  When a stage name is
     used, ``stop_before`` halts before the first step of that stage and
     ``stop_after`` halts after the last step of that stage.
+
+    **Model and Event configuration**
+
+    ``model_config`` and ``event_config`` are built from the supplied
+    parameters at the end of ``__init__`` and serve as the single source of
+    truth for all ``MulensModel.Model`` and ``MulensModel.Event`` construction
+    within this fitter.  ``event_config`` is rebuilt after renormalization
+    via ``_build_event_config()`` because renormalization replaces dataset
+    objects, which invalidates the dataset-keyed flux-fixing maps.
+
     """
 
     CONFIG_KEYS = [
@@ -597,6 +609,16 @@ class MMEXOFASTFitter:
         self.fix_source_flux_map = self._map_label_dict_to_datasets(
             self.fix_source_flux
         )
+
+        # Single source of truth for all Model and Event construction in this
+        # fitter. event_config is rebuilt after renormalization because dataset
+        # objects are replaced at that point.
+        self.model_config = ModelConfig(
+            coords=self.coords,
+            limb_coeff_u=self.limb_darkening_coeffs_u,
+            limb_coeff_gamma=self.limb_darkening_coeffs_gamma,
+        )
+        self.event_config = self._build_event_config()
 
         # Load initial results and infer entry point
         self._initial_entry_point: Optional[str] = None
@@ -768,6 +790,24 @@ class MMEXOFASTFitter:
                 is_complete=False,
             )
             self.all_fit_results.set(record)
+
+    def _build_event_config(self) -> EventConfig:
+        """
+        Build an ``EventConfig`` from the current flux-fixing maps.
+
+        Separated from ``__init__`` because renormalization replaces dataset
+        objects, which requires the flux-fixing maps — and therefore
+        ``event_config`` — to be rebuilt with updated dataset keys.
+
+        Returns
+        -------
+        EventConfig
+        """
+        return EventConfig(
+            coords=self.coords,
+            fix_blend_flux=self.fix_blend_flux_map,
+            fix_source_flux=self.fix_source_flux_map,
+        )
 
     # ------------------------------------------------------------------
     # Workflow execution
@@ -1450,9 +1490,9 @@ class MMEXOFASTFitter:
             model_key_to_label(reference_fit.model_key),
         )
 
-        event = MulensModel.Event(
+        event = self.event_config.build(
+            model=reference_model,
             datasets=self.datasets,
-            model=reference_model
         )
         event.fit_fluxes()
 
@@ -1540,6 +1580,10 @@ class MMEXOFASTFitter:
         self.fix_source_flux_map = self._map_label_dict_to_datasets(
             self.fix_source_flux
         )
+
+        # Rebuild event_config: renormalization replaced dataset objects,
+        # which invalidates the dataset-keyed flux-fixing maps.
+        self.event_config = self._build_event_config()
 
     def refit_all(self) -> None:
         """
@@ -1657,7 +1701,11 @@ class MMEXOFASTFitter:
         logger.info('Calculating residuals relative to %s',
                     model_key_to_label(reference_fit.model_key))
 
-        event = MulensModel.Event(datasets=self.datasets, model=reference_model)
+        event = self.event_config.build(
+            model=reference_model,
+            datasets=self.datasets,
+        )
+        # TODO: There might be a problem for FSPL models
         event.fit_fluxes()
 
         self.residuals: list = []
@@ -1711,7 +1759,8 @@ class MMEXOFASTFitter:
             datasets=self.datasets,
             pspl_params=best_pspl.params,
             af_results=self.intermediate_results.best_af_grid_point,
-            coords=self.coords,
+            model_config=self.model_config,
+            event_config=self.event_config,
         )
         params = estimator.get_anomaly_lc_parameters()
         logger.info('Estimated anomaly params: %s', params)
@@ -2353,10 +2402,15 @@ class MMEXOFASTFitter:
     def _plot_initial_2L1S_guess(self):
         #print(self.intermediate_results.est_binary_params)
         for key, params in self.intermediate_results.est_binary_params.items():
-            model = MulensModel.Model(parameters=params.ulens)
-            model.set_magnification_methods(params.mag_methods)
-            event = MulensModel.Event(
-                    model=model, datasets=self.datasets, coords=self.coords)
+            model = self.model_config.build(
+                parameters=params.ulens,
+                magnification_methods=params.mag_methods,
+                default_magnification_method='point_source_point_lens',
+            )
+            event = self.event_config.build(
+                model=model,
+                datasets=self.datasets,
+            )
             self._plot_event(
                 event,
                 suptitle=f'{key}: {event.get_chi2():.1f}\n{model.parameters}')
@@ -2505,16 +2559,6 @@ class MMEXOFASTFitter:
             )
         return result
 
-    def _get_model_kwargs(self):
-        kwargs = {
-            'coords':                      self.coords,
-            'limb_darkening_coeffs_u':     self.limb_darkening_coeffs_u,
-            'limb_darkening_coeffs_gamma': (
-                self.limb_darkening_coeffs_gamma
-            )
-        }
-        return kwargs
-
     def _get_fitter_kwargs(self, source_type=None) -> dict:
         """
         Bundle fitter options for passing to ``SFitFitter``.
@@ -2530,16 +2574,14 @@ class MMEXOFASTFitter:
         dict
             Keyword arguments ready to unpack into a fitter constructor.
         """
-        kwargs = self._get_model_kwargs()
-        kwargs.update({
-            'mag_methods': self.mag_methods,
-            'fix_source_flux':             self.fix_source_flux_map,
-            'fix_blend_flux':              self.fix_blend_flux_map,
-        })
-
-        if source_type == SourceType.POINT:
-            kwargs['mag_methods'] = None
-        return kwargs
+        return {
+            'model_config': self.model_config,
+            'event_config': self.event_config,
+            'mag_methods': (
+                None if source_type == SourceType.POINT
+                else self.mag_methods
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Validation
