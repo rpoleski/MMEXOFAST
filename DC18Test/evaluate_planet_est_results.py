@@ -20,7 +20,7 @@ def get_results():
     print('\nTotal Fits:', len(log_files), '\n')
     for log_file in log_files:
         lc_num = int(os.path.basename(log_file).split('.')[1])
-        print(lc_num, log_file)
+        #print(lc_num, log_file)
         with open(log_file) as f:
             for line in reversed(f.readlines()):
                 #print(line)
@@ -67,10 +67,11 @@ class EvaluateResults():
             how='left',  # Keep all rows in self.results
         )
         self.results['lc_num'] = self.results['idx'] + 1
-
-        print('\nsucceeded:', len(self.results))
         with pd.option_context('display.width', None, 'display.max_rows', None):
               print(self.results[self.print_columns].sort_values('lc_num'))
+
+        print('\nsucceeded:', len(self.results))
+
 
     def _get_truth_key(self, key):
         if key == 'rho':
