@@ -3,7 +3,7 @@ Functions and classes for converting between microlensing and physical
 parameters.
 """
 import numpy as np
-import MulensModel as mm
+import MulensModel
 
 
 _kappa = 8.14  # Should this be imported from mulens model for consistency?
@@ -230,7 +230,7 @@ class Phys2UlensConverter(object):
 
     @coords.setter
     def coords(self, new_value):
-        self._coords = mm.Coordinates(new_value)
+        self._coords = MulensModel.Coordinates(new_value)
 
     @property
     def pi_rel(self):

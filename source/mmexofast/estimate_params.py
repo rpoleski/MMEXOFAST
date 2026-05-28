@@ -18,7 +18,6 @@ import warnings
 #import copy
 
 import MulensModel
-import MulensModel as mm
 
 
 def get_PSPL_params(ef_grid_point, datasets, verbose=False):
@@ -460,10 +459,10 @@ class WidePlanetGridSearchEstimator(WidePlanetParameterEstimator):
         return self.log_rho_values if self.log_rho_values is not None else np.arange(-4, -1)
 
     def _make_event(self, grid_params):
-        model = mm.Model(grid_params)
+        model = MulensModel.Model(grid_params)
         model.set_magnification_methods(self._base_binary_params.mag_methods)
         model.default_magnification_method = 'point_source_point_lens'
-        event = mm.Event(datasets=self.datasets, model=model, coords=self.coords,)
+        event = MulensModel.Event(datasets=self.datasets, model=model, coords=self.coords,)
         return event
 
     def _grid_iterator(self):
@@ -826,10 +825,10 @@ class WidePlanetEnsembleInitializer():
         """
         Compute chi2 for a set of binary lens parameters.
         """
-        model = mm.Model(parameters=best)
+        model = MulensModel.Model(parameters=best)
         model.set_magnification_methods(mag_methods)
         model.default_magnification_method = 'point_source_point_lens'
-        event = mm.Event(datasets=self.datasets, model=model, coords=self.coords,)
+        event = MulensModel.Event(datasets=self.datasets, model=model, coords=self.coords,)
         return event.get_chi2()
 
     def _run_all_estimators(self):
@@ -951,10 +950,10 @@ class WidePlanetEnsembleInitializer():
         t_range_anomaly = [self.mag_methods[2], self.mag_methods[8]]
         t_range_vbbl = [self.mag_methods[4], self.mag_methods[6]]
 
-        ref_model = mm.Model(self.initial_model)
+        ref_model = MulensModel.Model(self.initial_model)
         ref_model.set_magnification_methods(self.mag_methods)
         ref_model.default_magnification_method = 'point_source_point_lens'
-        ref_event = mm.Event(datasets=self.datasets, model=ref_model, coords=self.coords,)
+        ref_event = MulensModel.Event(datasets=self.datasets, model=ref_model, coords=self.coords,)
         source_flux, blend_flux = ref_event.get_ref_fluxes()
 
         sorted_idx = df['chi2'].argsort().values[::-1]  # worst first
@@ -970,7 +969,7 @@ class WidePlanetEnsembleInitializer():
                 row = df.iloc[idx]
                 params = {k: row[k] for k in
                           ['t_0', 'u_0', 't_E', 's', 'q', 'rho', 'alpha']}
-                model = mm.Model(params)
+                model = MulensModel.Model(params)
                 model.set_magnification_methods(self.mag_methods)
                 model.default_magnification_method = 'point_source_point_lens'
                 model.plot_lc(source_flux=source_flux, blend_flux=blend_flux,
@@ -1180,7 +1179,7 @@ def model_pspl_mag_at_pl(params):
              Magnification at the specified time 't_pl' based on the point lens model.
             
     """
-    model1 = mm.Model({'t_0': params['t_0'], 
+    model1 = MulensModel.Model({'t_0': params['t_0'],
                        'u_0': params['u_0'], 
                        't_E': params['t_E']})
     return model1.get_magnification(params['t_pl'])
@@ -1299,8 +1298,8 @@ class AnomalyPropertyEstimator():
         self._expected_model_fluxes = None
 
     def get_pspl_event(self):
-        event = mm.Event(datasets=self.datasets,
-                         model=mm.Model(self.pspl_params),
+        event = MulensModel.Event(datasets=self.datasets,
+                         model=MulensModel.Model(self.pspl_params),
                          coords=self.coords,
                         )
         event.fit_fluxes()
@@ -1528,7 +1527,7 @@ class AnomalyPropertyEstimator():
         plt.title(self.anom_type)
         self.pspl_event.plot_data()
         self.pspl_event.plot_model(color='black', zorder=5)
-        peak_anom_mag = mm.Utils.get_mag_from_flux(self.expected_model_fluxes[self.peak_index] + self.peak_dflux)
+        peak_anom_mag = MulensModel.Utils.get_mag_from_flux(self.expected_model_fluxes[self.peak_index] + self.peak_dflux)
         plt.scatter(self.peak_time, peak_anom_mag, marker='d', color='darkgray', zorder=10)
 
         self._plot_peak_lines()
@@ -1566,9 +1565,9 @@ class AnomalyPropertyEstimator():
 
     @property
     def dmag(self):
-        expected_mag =  mm.Utils.get_mag_from_flux(
+        expected_mag = MulensModel.Utils.get_mag_from_flux(
             self.expected_model_fluxes[self.peak_index])
-        peak_anom_mag = mm.Utils.get_mag_from_flux(
+        peak_anom_mag = MulensModel.Utils.get_mag_from_flux(
             self.expected_model_fluxes[self.peak_index] + self.peak_dflux)
 
         return peak_anom_mag - expected_mag
