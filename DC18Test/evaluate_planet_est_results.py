@@ -45,12 +45,13 @@ def get_results():
     print('\nclassified as hm:', sorted(hm))
     print('Total: ', len(hm), '\n')
     print('\nest_binary_params failed: ', sorted(failed), '\nTotal: ', len(failed), '\n')
-    return pd.DataFrame(results)
+    results = pd.DataFrame(results)
+    return results
 
 
 class EvaluateResults():
     eval_columns = ['idx', 'u0_true', 'u_0', 'tE_true', 't_E', 's_true', 's', 'q_true', 'q']
-    print_columns = ['idx', 't_0', 't0_true', 'u_0', 'u0_true', 't_E', 'tE_true', 'rho', 'rhos_true',
+    print_columns = ['lc_num', 't_0', 't0_true', 'u_0', 'u0_true', 't_E', 'tE_true', 'rho', 'rhos_true',
                      's', 's_true', 'q', 'q_true', 'alpha', 'alpha_true']
 
     def __init__(self):
@@ -65,10 +66,11 @@ class EvaluateResults():
             right_index=True,
             how='left',  # Keep all rows in self.results
         )
+        self.results['lc_num'] = self.results['idx'] + 1
 
         print('\nsucceeded:', len(self.results))
-        with pd.option_context('display.width', None):
-              print(self.results[self.print_columns].sort_values('idx'))
+        with pd.option_context('display.width', None, 'display.max_rows', None):
+              print(self.results[self.print_columns].sort_values('lc_num'))
 
     def _get_truth_key(self, key):
         if key == 'rho':
@@ -182,16 +184,29 @@ class EvaluateResults():
     def is_log_q_good(self, threshold=0.5):
         delta = np.log10(self.results['q']) - np.log10(self.results['q_true'])
         good = np.abs(delta) < threshold
-        print(f'|dlog q|< {threshold}: {np.sum(good)}')
-        print('good:', (self.results[good]['idx']+1).tolist())
-        print('bad:', (self.results[~good]['idx'] + 1).tolist())
-        with pd.option_context('display.width', None, 'display.max_rows', None):
-            print('\ngood:\n', self.results[good][self.eval_columns].sort_values('idx'))
-            print('\nbad:\n', self.results[~good][self.eval_columns].sort_values('idx'))
+        print(f'\n|dlog q|< {threshold}: {np.sum(good)}')
+        print('good:', sorted(self.results[good]['idx']+1))
+        print('bad:', sorted(self.results[~good]['idx'] + 1))
+        #with pd.option_context('display.width', None, 'display.max_rows', None):
+        #    print('\ngood:\n', self.results[good][self.eval_columns].sort_values('idx'))
+        #    print('\nbad:\n', self.results[~good][self.eval_columns].sort_values('idx'))
+
+    def is_the_planet_good(self, log_q_threshold=0.5):
+        delta = np.log10(self.results['q']) - np.log10(self.results['q_true'])
+        good = (np.abs(delta) < log_q_threshold) & ((self.results['s'] - 1) * (self.results['s_true'] - 1) > 0)
+        print(f'\n|dlog q|< {log_q_threshold} AND close/wide correct: {np.sum(good)}')
+        print('good:', sorted(self.results[good]['idx']+1))
+        print('bad:', sorted(self.results[~good]['idx'] + 1))
+        #with pd.option_context('display.width', None, 'display.max_rows', None):
+        #    print('\ngood:\n', self.results[good][self.eval_columns].sort_values('idx'))
+        #    print('\nbad:\n', self.results[~good][self.eval_columns].sort_values('idx'))
+
 
 if __name__=='__main__':
     evaluator = EvaluateResults()
     evaluator.is_log_q_good()
+    evaluator.is_the_planet_good()
+
     evaluator.make_all_scatter_plots()
     evaluator.make_all_delta_plots()
     #plt.show()
