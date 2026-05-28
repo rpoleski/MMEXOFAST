@@ -123,10 +123,10 @@ class ModelConfig:
             model.default_magnification_method = default_magnification_method
         if self.limb_coeff_gamma is not None:
             for band, value in self.limb_coeff_gamma.items():
-                model.set_limb_coeff_gamma(value, band)
+                model.set_limb_coeff_gamma(band, value)
         if self.limb_coeff_u is not None:
             for band, value in self.limb_coeff_u.items():
-                model.set_limb_coeff_u(value, band)
+                model.set_limb_coeff_u(band, value)
 
 
 @dataclasses.dataclass
@@ -157,7 +157,7 @@ class EventConfig:
     fix_blend_flux: Optional[dict] = None
     fix_source_flux: Optional[dict] = None
     fix_source_flux_ratio: Optional[dict] = None
-    data_ref: int = 0
+    data_ref: int = None
 
     def build(
         self,
@@ -200,6 +200,7 @@ class EventConfig:
             for f in constructor_fields
             if getattr(self, f) is not None
         }
-        if self.data_ref != 0:
+        if self.data_ref is not None:
             kwargs['data_ref'] = self.data_ref
+
         return kwargs
