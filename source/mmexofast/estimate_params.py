@@ -1082,6 +1082,14 @@ class CloseLowerPlanetParameterEstimator(CloseUpperPlanetParameterEstimator):
         return self._alpha
 
 
+class CloseUpperPlanetGridSearchEstimator(WidePlanetGridSearchEstimator, CloseUpperPlanetParameterEstimator):
+    pass
+
+
+class CloseLowerPlanetGridSearchEstimator(WidePlanetGridSearchEstimator, CloseLowerPlanetParameterEstimator):
+    pass
+
+
 def get_close_params(params, q=None, rho=None):
     """
     Transform initial parameters into two close model parameters for a binary lens. One for upper and one for lower caustics.

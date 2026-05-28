@@ -23,8 +23,9 @@ from scipy.special import erfcinv
 
 from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFitResults, EmceeFitResults
 from .workflow_step import WorkflowStep
-from .estimate_params import get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator, \
-    ClosePlanetGridSearchEstimator, CloseUpperPlanetParameterEstimator, CloseLowerPlanetParameterEstimator
+from .estimate_params import (get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator,
+    ClosePlanetGridSearchEstimator, CloseUpperPlanetGridSearchEstimator, CloseLowerPlanetGridSearchEstimator
+                              )
 from .fitters import SFitFitter, WidePlanetFitter
 from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType, SourceType, ParallaxBranch, LensOrbMotion
 from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
@@ -1734,31 +1735,37 @@ class MMEXOFASTFitter:
         ``self.intermediate_results.est_binary_params``.
         """
         est_params = {}
-        estimator_class = None
+        estimator_classes = None
         if self.intermediate_results.anomaly_type == 'wide':
-            estimator_class = WidePlanetGridSearchEstimator
+            estimator_classes = [WidePlanetGridSearchEstimator, CloseUpperPlanetGridSearchEstimator,
+                                 CloseLowerPlanetGridSearchEstimator]
         elif self.intermediate_results.anomaly_type == 'close':
-            estimator_class = ClosePlanetGridSearchEstimator
+            estimator_classes = [ClosePlanetGridSearchEstimator]
         else:
             logger.info('Binary params estimate not implemented for %s', self.intermediate_results.anomaly_type)
 
-        if estimator_class is not None:
-            estimator = estimator_class(
-                datasets=self.datasets,
-                params=self.intermediate_results.anomaly_lc_params,
-                coords=self.coords,
-            )
-            estimator.run()
+        if estimator_classes is not None:
+            for estimator_class in estimator_classes:
+                estimator = estimator_class(
+                    datasets=self.datasets,
+                    params=self.intermediate_results.anomaly_lc_params,
+                    coords=self.coords,
+                )
+                estimator.run()
 
-            params = estimator.binary_params
-            logger.info('Estimated binary params: %s', params.ulens)
-            logger.info('mag_methods: %s', params.mag_methods)
-            est_params[f'{self.intermediate_results.anomaly_type}'] = params
+                class_name = estimator_class.__name__
+                class_name = class_name.removesuffix("ParameterEstimator")
+                class_name = class_name.removesuffix("GridSearchEstimator")
 
-            if self.intermediate_results.anomaly_type in ['close', 'wide']:
-                s_dagger = estimator.alternate_params
-                logger.info('Alternate s_dagger solution: %s', s_dagger.ulens)
-                est_params[f'{self.intermediate_results.anomaly_type}_alt'] = s_dagger
+                params = estimator.binary_params
+                logger.info('Estimated binary params (%s): %s', class_name, params.ulens)
+                logger.info('mag_methods: %s', params.mag_methods)
+                est_params[class_name] = params
+
+                if self.intermediate_results.anomaly_type in ['close', 'wide']:
+                    s_dagger = estimator.alternate_params
+                    logger.info('Alternate s_dagger solution: %s', s_dagger.ulens)
+                    est_params[class_name + '_alt'] = s_dagger
 
         self.intermediate_results.est_binary_params = est_params
         if (self._output_config is not None) and self._output_config.save_plots:
