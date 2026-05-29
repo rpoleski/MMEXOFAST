@@ -413,6 +413,22 @@ class EvaluateResults():
             self.make_scatter_plot(key, log=(key in ('q', 'rho')))
             plt.savefig(f'temp_output/no_par/figs/{key}_vs.png', dpi=300)
 
+    def make_planet_plots(self):
+        keys = ['s', 'q']
+        deltas = {}
+        for key in keys:
+            truth_key  = self._get_truth_key(key)
+            fit_value  = self.results[key]
+            true_value = self.results[truth_key]
+            delta  = np.log10(fit_value) - np.log10(true_value)
+            deltas[key] = delta
+
+        self._plot(deltas['s'], deltas['q'])
+        plt.xlabel('d log s')
+        plt.ylabel('d log q')
+        plt.minorticks_on()
+        plt.tight_layout()
+
 
 def check_bad_t0(evaluator):
     ef_results = get_ef_grid_results().sort_values(by='lc_num').rename(columns={
@@ -433,8 +449,11 @@ if __name__ == '__main__':
     evaluator.is_the_pspl_fit_good()
     evaluator.is_log_q_good()
     evaluator.is_the_planet_good()
-    evaluator.make_all_scatter_plots()
-    evaluator.make_all_delta_plots()
+    #evaluator.make_all_scatter_plots()
+    #evaluator.make_all_delta_plots()
+
+    evaluator.make_planet_plots()
+    plt.show()
 
     # Switch strategies at any time without re-parsing:
     # evaluator.set_strategy(SelectionStrategy.PRIMARY_FIRST)
