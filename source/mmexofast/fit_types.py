@@ -1,27 +1,37 @@
 """
 fit_types.py
 
-Definitions of model-type enums, ModelKey, and label<->ModelKey conversion.
+Definitions of model-type enums, FitKey, and label<->FitKey conversion.
 
 Label grammar (current conventions)
------------------------------------
+------------------------------------
 <base> ::= "PSPL" | "FSPL" | "2L1S" | ...
 
-<modifier sequence> (separated by spaces) encodes parallax and (for binaries) orbital motion:
+For point-lens bases the modifier sequence is:
 
     "<base> static"
-        parallax_branch = none, lens_orb_motion = none
+        parallax_branch = NONE, lens_orb_motion = NONE
 
     "<base> par <branch>"
-        parallax_branch = <branch>, lens_orb_motion = none
+        parallax_branch = <branch>, lens_orb_motion = NONE
 
-    "<base> 2Dorb par <branch>"
-        parallax_branch = <branch>, lens_orb_motion = ORB_2D
+    "<base> <motion> par <branch>"
+        parallax_branch = <branch>, lens_orb_motion = <motion>
 
-    "<base> kep par <branch>"
-        parallax_branch = <branch>, lens_orb_motion = KEP
+For binary-lens bases an optional <binary_model_type> token may appear
+*immediately after* the base and before any motion/parallax suffix:
 
-Also, as a convenience, "<base>" alone is treated as "<base> static".
+    "<base> <binary_model_type> static"
+    "<base> <binary_model_type> par <branch>"
+    "<base> <binary_model_type> <motion>"
+    "<base> <binary_model_type> <motion> par <branch>"
+
+As a convenience, "<base>" alone is treated as "<base> static".
+
+Valid binary_model_type values
+-------------------------------
+    Wide, Close, CloseUpper, CloseLower
+    Wide_alt, Close_alt, CloseUpper_alt, CloseLower_alt
 
 Examples
 --------
@@ -30,6 +40,10 @@ Examples
     "PSPL par u0+"
     "FSPL par u0-"
     "2L1S static"
+    "2L1S Wide static"
+    "2L1S Close par u0+"
+    "2L1S Wide 2Dorb"
+    "2L1S Close kep par u0--"
     "2L1S par u0+"
     "2L1S 2Dorb par u0+"
     "2L1S kep par u0--"
@@ -39,7 +53,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, FrozenSet, Optional
 
 
 # ============================================================================
@@ -49,12 +63,12 @@ from typing import Dict, Optional
 
 class LensType(Enum):
     POINT = "point"
-    BINARY = "binary"   # e.g. 2L1S
+    BINARY = "binary"
 
 
 class SourceType(Enum):
     POINT = "point"
-    FINITE = "finite"   # for finite-source PSPL/FSPL, etc.
+    FINITE = "finite"
 
 
 class ParallaxBranch(Enum):
@@ -69,9 +83,27 @@ class ParallaxBranch(Enum):
 
 class LensOrbMotion(Enum):
     NONE = "none"
-    ORB_2D = "2Dorb"    # 2L1S 2-parameter orbital motion
-    KEPLER = "kep"         # 2L1S full Keplerian orbital motion
-    # extendable
+    ORB_2D = "2Dorb"
+    KEPLER = "kep"
+
+
+# ============================================================================
+# Binary model type constant
+# Must be defined before FitKey so that __post_init__ can reference it.
+# ============================================================================
+
+#: Eight recognised binary_model_type strings:
+#: four base topology labels plus their ``_alt`` (degenerate-solution) variants.
+BINARY_MODEL_TYPES: FrozenSet[str] = frozenset([
+    "Wide",
+    "Close",
+    "CloseUpper",
+    "CloseLower",
+    "Wide_alt",
+    "Close_alt",
+    "CloseUpper_alt",
+    "CloseLower_alt",
+])
 
 
 # ============================================================================
@@ -81,31 +113,79 @@ class LensOrbMotion(Enum):
 
 @dataclass(frozen=True)
 class FitKey:
+    """Immutable key that uniquely identifies a microlensing model fit.
+
+    Parameters
+    ----------
+    lens_type : LensType
+    source_type : SourceType
+    parallax_branch : ParallaxBranch
+    lens_orb_motion : LensOrbMotion
+    locations_used : str, optional
+        Observatory/satellite combination string, e.g. ``'ground+Spitzer'``.
+    binary_model_type : str, optional
+        Topological classification of the binary-lens solution.
+        Must be one of the values in :data:`BINARY_MODEL_TYPES`.
+        May only be set when ``lens_type == LensType.BINARY``;
+        ``None`` is always valid regardless of lens type.
+    """
+
     lens_type: LensType
     source_type: SourceType
     parallax_branch: ParallaxBranch
     lens_orb_motion: LensOrbMotion
     locations_used: Optional[str] = None
+    binary_model_type: Optional[str] = None
 
     def __post_init__(self) -> None:
-        # Enforce: point lens cannot have orbital motion.
-        if self.lens_type == LensType.POINT and self.lens_orb_motion is not LensOrbMotion.NONE:
-            raise ValueError("Point lenses must have lens_orb_motion == NONE")
+        # --- Existing constraint ----------------------------------------
+        # Point lenses cannot have orbital motion.
+        if (
+            self.lens_type == LensType.POINT
+            and self.lens_orb_motion is not LensOrbMotion.NONE
+        ):
+            raise ValueError(
+                f"Point lenses must have lens_orb_motion == NONE; "
+                f"got lens_orb_motion={self.lens_orb_motion!r}"
+            )
+
+        # --- New constraints for binary_model_type ----------------------
+        if self.binary_model_type is None:
+            return
+
+        # Non-None binary_model_type is only meaningful for binary lenses.
+        if self.lens_type != LensType.BINARY:
+            raise ValueError(
+                f"binary_model_type may only be set for LensType.BINARY; "
+                f"got lens_type={self.lens_type!r}"
+            )
+
+        # Empty string is not a valid value.
+        if self.binary_model_type == "":
+            raise ValueError("binary_model_type must not be an empty string")
+
+        # Value must be drawn from the recognised set.
+        if self.binary_model_type not in BINARY_MODEL_TYPES:
+            raise ValueError(
+                f"Invalid binary_model_type {self.binary_model_type!r}. "
+                f"Must be one of: {sorted(BINARY_MODEL_TYPES)}"
+            )
 
 
 # ============================================================================
 # Tag mapping tables
 # ============================================================================
 
-# Base model tag → lens_type / source_type
-# Extend these dictionaries if you introduce new base model types.
+# Base model tag → source_type.
+# NOTE: "2L1S" maps to SourceType.POINT (binary lens, single point source).
+#       A future "2L1S_fs" or similar tag will cover SourceType.FINITE.
 SOURCE_TAGS: Dict[str, SourceType] = {
     "PSPL": SourceType.POINT,
     "FSPL": SourceType.FINITE,
-    "2L1S": SourceType.POINT,   # binary lens with single source
-    "2L1S": SourceType.FINITE,
+    "2L1S": SourceType.POINT,
 }
 
+# Base model tag → lens_type.
 LENS_TAGS: Dict[str, LensType] = {
     "PSPL": LensType.POINT,
     "FSPL": LensType.POINT,
@@ -114,8 +194,8 @@ LENS_TAGS: Dict[str, LensType] = {
 
 PARALLAX_BRANCH_TAGS: Dict[str, ParallaxBranch] = {
     "none": ParallaxBranch.NONE,
-    "u0+": ParallaxBranch.U0_PLUS,
-    "u0-": ParallaxBranch.U0_MINUS,
+    "u0+":  ParallaxBranch.U0_PLUS,
+    "u0-":  ParallaxBranch.U0_MINUS,
     "u0++": ParallaxBranch.U0_PP,
     "u0--": ParallaxBranch.U0_MM,
     "u0+-": ParallaxBranch.U0_PM,
@@ -123,28 +203,19 @@ PARALLAX_BRANCH_TAGS: Dict[str, ParallaxBranch] = {
 }
 
 LENS_MOTION_TAGS: Dict[str, LensOrbMotion] = {
-    "none": LensOrbMotion.NONE,
+    "none":  LensOrbMotion.NONE,
     "2Dorb": LensOrbMotion.ORB_2D,
-    "kep": LensOrbMotion.KEPLER,
+    "kep":   LensOrbMotion.KEPLER,
 }
 
 
 # ============================================================================
-# Label <-> ModelKey conversion
+# Label <-> FitKey conversion
 # ============================================================================
 
+
 def label_to_model_key(label: str) -> FitKey:
-    """
-    Parse a human-readable label into a ModelKey.
-
-    Expected forms (tokens separated by spaces):
-
-        "<base> static"
-        "<base> par <branch>"
-        "<base> <motion>"
-        "<base> <motion> par <branch>"
-
-    As a convenience, "<base>" alone is treated as "<base> static".
+    """Parse a human-readable label into a :class:`FitKey`.
 
     Parameters
     ----------
@@ -157,7 +228,7 @@ def label_to_model_key(label: str) -> FitKey:
     Raises
     ------
     ValueError
-        If the label cannot be parsed or refers to unknown tags.
+        If the label cannot be parsed or references unknown tags.
     """
     tokens = label.strip().split()
     if not tokens:
@@ -165,64 +236,8 @@ def label_to_model_key(label: str) -> FitKey:
 
     base = tokens[0]
 
-    # Defaults
-    parallax_branch = ParallaxBranch.NONE
-    lens_orb_motion = LensOrbMotion.NONE
-
-    # 'PSPL static' or '2L1S static'
-    if len(tokens) == 2 and tokens[1] == "static":
-        # parallax_branch and lens_orb_motion remain NONE
-        pass
-
-    # Bare 'PSPL' etc → treat as static
-    elif len(tokens) == 1:
-        # parallax_branch and lens_orb_motion remain NONE
-        pass
-
-    else:
-        # More complex forms:
-        #   "<base> par u0+"
-        #   "<base> <motion>"
-        #   "<base> <motion> par u0+"
-        tail = tokens[1:]
-
-        # Case 1: 'par <branch>'
-        if tail[0] == "par":
-            lens_motion_token = "none"
-            branch_token = tail[1] if len(tail) > 1 else "none"
-
-        # Case 2: '<motion> ...'
-        else:
-            lens_motion_token = tail[0]  # '2Dorb' or 'kep'
-
-            # Check what follows the motion token
-            if len(tail) >= 2 and tail[1] == "par":
-                # Has parallax: '<base> <motion> par <branch>'
-                branch_token = tail[2] if len(tail) > 2 else "none"
-            elif len(tail) == 1:
-                # Just motion, no parallax: '<base> <motion>'
-                branch_token = "none"
-            else:
-                # Has something after motion that isn't 'par' - invalid
-                raise ValueError(
-                    f"Cannot parse label {label!r}: "
-                    f"expected 'par' or end of label after lens motion token {lens_motion_token!r}, "
-                    f"got {tail[1]!r}"
-                )
-
-        lens_orb_motion = LENS_MOTION_TAGS.get(lens_motion_token)
-        if lens_orb_motion is None:
-            raise ValueError(
-                f"Unknown lens orbital motion token in label {label!r}: {lens_motion_token!r}"
-            )
-
-        parallax_branch = PARALLAX_BRANCH_TAGS.get(branch_token)
-        if parallax_branch is None:
-            raise ValueError(
-                f"Unknown parallax branch token in label {label!r}: {branch_token!r}"
-            )
-
-    # Now decode lens_type and source_type from the base tag
+    # Resolve the base tag first; we need lens_type before deciding whether
+    # to look for a binary_model_type token in the next position.
     lens_type = LENS_TAGS.get(base)
     source_type = SOURCE_TAGS.get(base)
 
@@ -231,27 +246,90 @@ def label_to_model_key(label: str) -> FitKey:
             f"Unknown base model tag in label {label!r}: {base!r}"
         )
 
+    # Defaults
+    parallax_branch = ParallaxBranch.NONE
+    lens_orb_motion = LensOrbMotion.NONE
+    binary_model_type = None
+
+    tail = list(tokens[1:])
+
+    # ------------------------------------------------------------------
+    # Optionally consume the binary_model_type token.
+    # This slot is only available for binary-lens bases.  For point-lens
+    # bases any unrecognised token in this position is caught below.
+    # ------------------------------------------------------------------
+    if tail and lens_type == LensType.BINARY and tail[0] in BINARY_MODEL_TYPES:
+        binary_model_type = tail[0]
+        tail = tail[1:]
+
+    # ------------------------------------------------------------------
+    # Parse the remaining modifier sequence.
+    # ------------------------------------------------------------------
+    if not tail:
+        # Bare "<base>" or "<base> <bmt>" – treat as static.
+        pass
+
+    elif tail == ["static"]:
+        # Explicit "… static" suffix.
+        pass
+
+    elif tail[0] == "par":
+        # "… par <branch>" – parallax, no orbital motion.
+        if len(tail) != 2:
+            raise ValueError(
+                f"Cannot parse label {label!r}: "
+                f"'par' must be followed by exactly one branch token, "
+                f"got {tail!r}"
+            )
+        branch_token = tail[1]
+        parallax_branch = PARALLAX_BRANCH_TAGS.get(branch_token)
+        if parallax_branch is None:
+            raise ValueError(
+                f"Unknown parallax branch token in label {label!r}: "
+                f"{branch_token!r}"
+            )
+
+    elif tail[0] in LENS_MOTION_TAGS:
+        # "… <motion>" or "… <motion> par <branch>"
+        lens_motion_token = tail[0]
+        lens_orb_motion = LENS_MOTION_TAGS[lens_motion_token]
+
+        if len(tail) == 1:
+            # Motion only; no parallax.
+            pass
+
+        elif len(tail) == 3 and tail[1] == "par":
+            # Motion + parallax.
+            branch_token = tail[2]
+            parallax_branch = PARALLAX_BRANCH_TAGS.get(branch_token)
+            if parallax_branch is None:
+                raise ValueError(
+                    f"Unknown parallax branch token in label {label!r}: "
+                    f"{branch_token!r}"
+                )
+
+        else:
+            raise ValueError(
+                f"Cannot parse label {label!r}: unexpected tokens after "
+                f"motion token {lens_motion_token!r}: {tail[1:]!r}"
+            )
+
+    else:
+        raise ValueError(
+            f"Cannot parse label {label!r}: unexpected token {tail[0]!r}"
+        )
+
     return FitKey(
         lens_type=lens_type,
         source_type=source_type,
         parallax_branch=parallax_branch,
         lens_orb_motion=lens_orb_motion,
+        binary_model_type=binary_model_type,
     )
 
 
 def model_key_to_label(key: FitKey) -> str:
-    """
-    Map a ModelKey back to a human-readable label following the same
-    conventions as label_to_model_key().
-
-    Rules
-    -----
-    - Choose a base tag that matches (lens_type, source_type).
-    - If parallax_branch == NONE and lens_orb_motion == NONE -> "<base> static"
-    - If lens_orb_motion == NONE and parallax_branch != NONE -> "<base> par <branch>"
-    - If lens_orb_motion != NONE and parallax_branch == NONE -> "<base> <motion>"
-    - If lens_orb_motion != NONE and parallax_branch != NONE ->
-          "<base> <motion> par <branch>"
+    """Map a :class:`FitKey` back to a human-readable label.
 
     Parameters
     ----------
@@ -261,49 +339,60 @@ def model_key_to_label(key: FitKey) -> str:
     -------
     str
     """
-    # Find a base tag that matches lens_type+source_type
+    # Find a base tag whose (lens_type, source_type) matches the key.
     base = None
     for candidate, lt in LENS_TAGS.items():
         if lt == key.lens_type and SOURCE_TAGS[candidate] == key.source_type:
             base = candidate
             break
 
-    assert base is not None, f"No base label mapping for ModelKey {key!r}"
+    assert base is not None, f"No base label mapping for FitKey {key!r}"
 
-    # Static
+    # Optional binary_model_type token placed immediately after the base.
+    bmt_part = f" {key.binary_model_type}" if key.binary_model_type is not None else ""
+
+    # ------------------------------------------------------------------
+    # Static case: neither parallax nor orbital motion.
+    # ------------------------------------------------------------------
     if (
-            key.parallax_branch == ParallaxBranch.NONE
-            and key.lens_orb_motion == LensOrbMotion.NONE
+        key.parallax_branch == ParallaxBranch.NONE
+        and key.lens_orb_motion == LensOrbMotion.NONE
     ):
-        return f"{base} static"
+        return f"{base}{bmt_part} static"
 
-    # Find motion label
+    # ------------------------------------------------------------------
+    # Resolve motion and branch labels.
+    # ------------------------------------------------------------------
     lens_motion_label = None
     for lbl, motion in LENS_MOTION_TAGS.items():
         if motion == key.lens_orb_motion:
             lens_motion_label = lbl
             break
 
-    assert lens_motion_label is not None, \
+    assert lens_motion_label is not None, (
         f"No lens motion label mapping for LensOrbMotion {key.lens_orb_motion!r}"
+    )
 
-    # Find branch label
     branch_label = None
     for lbl, br in PARALLAX_BRANCH_TAGS.items():
         if br == key.parallax_branch:
             branch_label = lbl
             break
 
-    assert branch_label is not None, \
+    assert branch_label is not None, (
         f"No parallax branch label mapping for {key.parallax_branch!r}"
+    )
 
+    # ------------------------------------------------------------------
+    # Assemble label from parts.
+    # ------------------------------------------------------------------
     if lens_motion_label == "none":
-        # Pure parallax, no orbital motion: "<base> par u0+"
-        return f"{base} par {branch_label}"
+        # Parallax only: "<base> [bmt] par <branch>"
+        return f"{base}{bmt_part} par {branch_label}"
 
     if branch_label == "none":
-        # Orbital motion, no parallax: "<base> <motion>"
-        return f"{base} {lens_motion_label}"
+        # Motion only: "<base> [bmt] <motion>"
+        return f"{base}{bmt_part} {lens_motion_label}"
 
-    # Orbital motion + parallax: "<base> <motion> par u0+"
-    return f"{base} {lens_motion_label} par {branch_label}"
+    # Motion + parallax: "<base> [bmt] <motion> par <branch>"
+    return f"{base}{bmt_part} {lens_motion_label} par {branch_label}"

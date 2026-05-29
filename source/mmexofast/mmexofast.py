@@ -1837,47 +1837,89 @@ class MMEXOFASTFitter:
             additional steps are required.
         """
         best_pspl = self.select_best_point_lens_model()
-        sigmas = dict(best_pspl.sigmas)
 
-        raise NotImplementedError('fit_binary_models needs to be updated to work with multiple est_binary_params')
-        t_E = self.intermediate_results.est_binary_params['t_E']
-        u_0 = self.intermediate_results.est_binary_params['u_0']
-        max_sigma_u_0 = 0.1
-        max_sigma_t_E = max_sigma_u_0 * t_E / u_0
-        sigmas['u_0'] = min(sigmas['u_0'], max_sigma_u_0)
-        sigmas['t_E'] = min(sigmas['t_E'], max_sigma_t_E)
-
-        wide_planet_fitter = WidePlanetFitter(
-            datasets=self.datasets,
-            anomaly_lc_params=self.intermediate_results.est_binary_params,
-            sigmas=sigmas,
-            emcee_settings=self.emcee_settings,
-            **self._get_fitter_kwargs(),
-        )
-        logger.info(
-            'Initial 2L1S Wide Model: %s',
-            wide_planet_fitter.initial_model,
-        )
-        wide_planet_fitter.run()
-
-        key = FitKey(
-            lens_type=LensType.BINARY,
-            source_type=(
-                SourceType.FINITE
-                if self.finite_source
-                else SourceType.POINT
-            ),
-            parallax_branch=ParallaxBranch.NONE,
-            lens_orb_motion=LensOrbMotion.NONE,
-        )
-        self.all_fit_results.set(
-            FitRecord.from_full_result(
-                model_key=key,
-                full_result=EmceeFitResults(wide_planet_fitter),
-                renorm_factors=self.renorm_factors,
-                fixed=False,
+        for key, params in self.intermediate_results.est_binary_params.items():
+            model = self.model_config.build(
+                parameters=params.ulens,
+                magnification_methods=params.mag_methods,
+                default_magnification_method='point_source_point_lens',
             )
-        )
+            event = self.event_config.build(
+                model=model,
+                datasets=self.datasets,
+            )
+            if event.get_chi2() > best_pspl.chi2:
+                continue
+
+            # Do the fit
+            anomaly_fitter = AnomalyFitter(
+                datasets=self.datasets,
+                initial_guess=params,
+                anomaly_lc_params=self.intermediate_results.anomaly_lc_params,
+                model_config=self.model_config,
+                event_config=self.event_config
+            )
+            anomaly_fitter.run()
+
+            results = EmceeFitResults(anomaly_fitter)
+            logger.info(f'Fitted params ({key}): {results.best}')
+
+            # Save the results to all results
+            key = FitKey(
+               lens_type=LensType.BINARY,
+               source_type=SourceType.FINITE,  # TODO: In the future, want to allow for rho=0 fits.
+               parallax_branch=ParallaxBranch.NONE,
+               lens_orb_motion=LensOrbMotion.NONE,
+               binary_model_type=key.replace('Planet', ''),
+            )
+            self.all_fit_results.set(
+                FitRecord.from_full_result(
+                    model_key=key,
+                    full_result=results,
+                    renorm_factors=self.renorm_factors,
+                    fixed=False,
+                )
+            )
+
+        #raise NotImplementedError('fit_binary_models needs to be updated to work with multiple est_binary_params')
+        #t_E = self.intermediate_results.est_binary_params['t_E']
+        #u_0 = self.intermediate_results.est_binary_params['u_0']
+        #max_sigma_u_0 = 0.1
+        #max_sigma_t_E = max_sigma_u_0 * t_E / u_0
+        #sigmas['u_0'] = min(sigmas['u_0'], max_sigma_u_0)
+        #sigmas['t_E'] = min(sigmas['t_E'], max_sigma_t_E)
+        #
+        #wide_planet_fitter = WidePlanetFitter(
+        #    datasets=self.datasets,
+        #    anomaly_lc_params=self.intermediate_results.est_binary_params,
+        #    sigmas=sigmas,
+        #    emcee_settings=self.emcee_settings,
+        #    **self._get_fitter_kwargs(),
+        #)
+        #logger.info(
+        #    'Initial 2L1S Wide Model: %s',
+        #    wide_planet_fitter.initial_model,
+        #)
+        #wide_planet_fitter.run()
+        #
+        #key = FitKey(
+        #    lens_type=LensType.BINARY,
+        #    source_type=(
+        #        SourceType.FINITE
+        #        if self.finite_source
+        #        else SourceType.POINT
+        #    ),
+        #    parallax_branch=ParallaxBranch.NONE,
+        #    lens_orb_motion=LensOrbMotion.NONE,
+        #)
+        #self.all_fit_results.set(
+        #    FitRecord.from_full_result(
+        #        model_key=key,
+        #        full_result=EmceeFitResults(wide_planet_fitter),
+        #        renorm_factors=self.renorm_factors,
+        #        fixed=False,
+        #    )
+        #)
         return None
 
     def check_needs_renorm(self) -> Optional[list[WorkflowStep]]:
