@@ -1801,7 +1801,8 @@ class MMEXOFASTFitter:
                 estimator = estimator_class(
                     datasets=self.datasets,
                     params=self.intermediate_results.anomaly_lc_params,
-                    coords=self.coords,
+                    model_config=self.model_config,
+                    event_config=self.event_config
                 )
                 estimator.run()
 

@@ -5,6 +5,7 @@ import os.path
 import glob
 import numpy as np
 import traceback
+from pathlib import Path
 
 
 from mmexofast.config import MODULE_PATH
@@ -31,11 +32,14 @@ def fit_lc(lc_num, verbose=False):
         stop_after='fit_binary_lens:est_binary_params',
         limb_darkening_coeffs_gamma={'W149': 0., 'Z087': 0.},
         output_config=mmexo.OutputConfig(
-            output_dir=output_dir, file_prefix=file_prefix, save_plots=True, save_table=True,
+            output_dir=Path(output_dir), file_prefix=file_prefix, save_plots=True, save_table=True,
             save_exozippy_init=False)
     )
-    fitter.fit()
-    print('exozippy input:\n', fitter.initialize_exozippy())
+    try:
+        fitter.fit()
+        print('exozippy input:\n', fitter.initialize_exozippy())
+    finally:
+        fitter.close()
     #results = fitter.all_fit_results
 
 
@@ -60,8 +64,9 @@ close_planets = [32, 40, 50, 74, 92, 95, 87,  186, 227]
 big_close_planets = [27, 120, 124, 128, 172]
 slow_parallax = [124, 128, 217] # 66 is broke
 dip_anom = [47, 74, 95, 103]
+bad_t0 = [12, 40, 81, 107, 208, 217, 227]
 
-lc_nums = [53]
+#lc_nums = [227]
 for lc_num in np.sort(lc_nums):
     print('\n...Fitting light curve {0}...'.format(lc_num))
     try:

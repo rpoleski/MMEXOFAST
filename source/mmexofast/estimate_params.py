@@ -49,19 +49,18 @@ def get_PSPL_params(ef_grid_point, datasets, model_config=None, event_config=Non
     _model_config = model_config if model_config is not None else ModelConfig()
     _event_config = event_config if event_config is not None else EventConfig()
 
-    t_0 = ef_grid_point['t_0']
+    t_0s = ef_grid_point['t_0'] + ef_grid_point['t_eff'] * np.linspace(-1, 1, 7)
     u_0s = [0.01, 0.1, 0.3, 1.0, 1.5]
     t_Es = [1., 3., 10., 20., 40., 100.]
     best_chi2 = np.inf
     best_params = None
-    for u_0 in u_0s:
-        for t_E in t_Es:
-            params = {'t_0': t_0, 't_E': t_E, 'u_0': u_0}
-            model = _model_config.build(parameters=params)
-            event = _event_config.build(model=model, datasets=datasets)
-            if event.get_chi2() < best_chi2:
-                best_params = params
-                best_chi2 = event.chi2
+    for t_0, u_0, t_E in product(t_0s, u_0s, t_Es):
+        params = {'t_0': t_0, 't_E': t_E, 'u_0': u_0}
+        model = _model_config.build(parameters=params)
+        event = _event_config.build(model=model, datasets=datasets)
+        if event.get_chi2() < best_chi2:
+            best_params = params
+            best_chi2 = event.chi2
 
     return best_params
 

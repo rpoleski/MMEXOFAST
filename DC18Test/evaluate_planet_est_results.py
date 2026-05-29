@@ -35,6 +35,28 @@ class SelectionStrategy(Enum):
     ALL           = "all"
 
 
+def _get_last_run_lines(lines: list[str]) -> list[str] | None:
+    """
+    Return lines from the last run (last 'Planned workflow:' onwards),
+    or None if no such marker is found.
+    """
+    last_run_start = None
+    for i, line in enumerate(lines):
+        if line.startswith("Planned workflow:"):
+            last_run_start = i
+
+    if last_run_start is None:
+        return None
+
+    return lines[last_run_start:]
+
+
+def _parse_log_dict(line_tail: str) -> dict:
+    """Parse a dict literal from a log line, handling np.float64() formatting."""
+    dict_str = re.sub(r'np\.float64\(([^)]+)\)', r'\1', line_tail)
+    return ast.literal_eval(dict_str)
+
+
 def get_results() -> pd.DataFrame:
     """
     Parse all log files and return every estimated binary parameter set found
@@ -60,17 +82,10 @@ def get_results() -> pd.DataFrame:
         with open(log_file) as f:
             lines = f.readlines()
 
-        # Log files can be appended across runs; use only the last run.
-        last_run_start = None
-        for i, line in enumerate(lines):
-            if line.startswith("Planned workflow:"):
-                last_run_start = i
-
-        if last_run_start is None:
+        run_lines = _get_last_run_lines(lines)
+        if run_lines is None:
             failed.append(lc_num)
             continue
-
-        run_lines = lines[last_run_start:]
 
         if any(line.strip().endswith("high_mag") for line in run_lines):
             hm.append(lc_num)
@@ -84,8 +99,7 @@ def get_results() -> pd.DataFrame:
             est_match = re.match(r'Estimated binary params \((\w+)\): (.+)', line)
             if est_match:
                 current_solution_type = est_match.group(1)
-                dict_str = re.sub(r'np\.float64\(([^)]+)\)', r'\1', est_match.group(2))
-                params = ast.literal_eval(dict_str)
+                params = _parse_log_dict(est_match.group(2))
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = False
@@ -96,9 +110,7 @@ def get_results() -> pd.DataFrame:
             # Legacy format (no type label): "Estimated binary params: {...}"
             if line.startswith("Estimated binary params:"):
                 current_solution_type = 'Unknown'
-                dict_str = re.sub(r'np\.float64\(([^)]+)\)', r'\1',
-                                  line.split(": ", 1)[1])
-                params = ast.literal_eval(dict_str)
+                params = _parse_log_dict(line.split(": ", 1)[1])
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = False
@@ -108,9 +120,7 @@ def get_results() -> pd.DataFrame:
 
             # Alternate s_dagger solution (always follows an "Estimated binary params" line)
             if line.startswith("Alternate s_dagger solution:") and current_solution_type is not None:
-                dict_str = re.sub(r'np\.float64\(([^)]+)\)', r'\1',
-                                  line.split(": ", 1)[1])
-                params = ast.literal_eval(dict_str)
+                params = _parse_log_dict(line.split(": ", 1)[1])
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = True
@@ -125,6 +135,51 @@ def get_results() -> pd.DataFrame:
     print('\nclassified as hm:', sorted(hm))
     print('Total: ', len(hm), '\n')
     print('\nest_binary_params failed: ', sorted(failed), '\nTotal: ', len(failed), '\n')
+
+    return pd.DataFrame(results)
+
+
+def get_ef_grid_results() -> pd.DataFrame:
+    """
+    Parse all log files and return the best EF grid point from the last run
+    of each file.
+
+    Returns
+    -------
+    pd.DataFrame with columns:
+        lc_num : int    one-based light-curve number
+        t_0    : float  adjusted by -2458234. for consistency with get_results()
+        t_eff  : float
+        j      : int
+        chi2   : float
+    """
+    results = []
+    missing = []
+    log_files = glob.glob('temp_output/no_par/W*/WFIRST.*.log')
+
+    for log_file in log_files:
+        lc_num = int(os.path.basename(log_file).split('.')[1])
+
+        with open(log_file) as f:
+            lines = f.readlines()
+
+        run_lines = _get_last_run_lines(lines)
+        if run_lines is None:
+            missing.append(lc_num)
+            continue
+
+        for line in run_lines:
+            if line.startswith("Best EF grid point:"):
+                params = _parse_log_dict(line.split(": ", 1)[1])
+                params['lc_num']  = lc_num
+                params['t_0']    -= 2458234.
+                results.append(params)
+                break
+        else:
+            missing.append(lc_num)
+
+    print(f'\nEF grid results found: {len(results)}')
+    print(f'EF grid results missing: {sorted(missing)}\n')
 
     return pd.DataFrame(results)
 
@@ -244,9 +299,37 @@ class EvaluateResults():
                 print(f'  Note: {len(overlap)} LC(s) appear in both lists '
                       f'(mixed solutions): {overlap}')
 
-    def is_log_q_good(self, threshold=0.5):
+    def get_good_t0(self):
+        delta_t0 = np.abs(self.results['t_0'] - self.results['t0_true'])
+        good_t0 = (delta_t0 < self.results['tE_true'] * 0.1)
+        msg = f'\nt0 is good (within 0.1tE): {np.sum(good_t0)}'
+        return good_t0, msg
+
+    def get_good_PSPL(self):
+        good_t0, _ = self.get_good_t0()
+
+        delta_u0 = np.abs((self.results['u_0'] - self.results['u0_true'])/ self.results['u0_true'])
+        good_u0 = delta_u0 < 0.5
+
+        delta_tE = np.abs((self.results['t_E'] - self.results['tE_true'])/ self.results['tE_true'])
+        good_tE = delta_tE < 0.5
+        good = good_t0 & good_u0 & good_tE
+        msg = f'\nPSPL is good (t0 w/in 0.1tE, u0 50%, tE 50%): {np.sum(good)}'
+
+        return good, msg
+
+    def is_the_pspl_fit_good(self):
+        good_t0, msg = self.get_good_t0()
+        print(msg)
+        self.print_indices(good_t0)
+
+        good, msg = self.get_good_PSPL()
+        print(msg)
+        self.print_indices(good)
+
+    def is_log_q_good(self, threshold=1.0):
         delta = np.log10(self.results['q']) - np.log10(self.results['q_true'])
-        good  = np.abs(delta) < threshold
+        good = (np.abs(delta) < threshold)
         print(f'\n|dlog q| < {threshold}: '
               f'{good.sum()} rows, {self.results[good]["idx"].nunique()} unique LCs')
         self.print_indices(good)
@@ -331,8 +414,23 @@ class EvaluateResults():
             plt.savefig(f'temp_output/no_par/figs/{key}_vs.png', dpi=300)
 
 
+def check_bad_t0(evaluator):
+    ef_results = get_ef_grid_results().sort_values(by='lc_num').rename(columns={
+        't_0': 't0_ef'})
+    with pd.option_context('display.width', None, 'display.max_rows', None):
+        print(ef_results.sort_values(by='t_eff'))
+
+    evaluator.results = pd.merge(evaluator.results, ef_results, on='lc_num')
+    good_t0, _ = evaluator.get_good_t0()
+    with pd.option_context('display.width', None, 'display.max_rows', None):
+        print(evaluator.results[~good_t0][evaluator.print_columns + ['t_eff']].sort_values(by='lc_num'))
+
+
 if __name__ == '__main__':
     evaluator = EvaluateResults(strategy=SelectionStrategy.ALL_PRIMARY)
+    check_bad_t0(evaluator)
+
+    evaluator.is_the_pspl_fit_good()
     evaluator.is_log_q_good()
     evaluator.is_the_planet_good()
     evaluator.make_all_scatter_plots()

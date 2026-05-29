@@ -28,7 +28,7 @@ class EventFinderGridSearch():
 
     def __init__(self,
                  datasets=None, t_eff_3=1, d_t_eff=1/3., t_eff_max=99.,
-                 d_t_0=1/3, t_0_min=None, t_0_max=None, z_t_eff=5,
+                 d_t_0=1/3., t_0_min=None, t_0_max=None, z_t_eff=5,
                  n_min=50):
         if datasets is None:
             raise ValueError('You must define the datasets!')
