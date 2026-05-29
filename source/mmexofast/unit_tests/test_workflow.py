@@ -1000,3 +1000,283 @@ class TestSelectBestPointLensModel(unittest.TestCase):
         fitter.all_fit_results.set(complete_static)
         fitter.all_fit_results.set(incomplete_parallax)
         self.assertIs(fitter.select_best_point_lens_model(), complete_static)
+
+
+class TestRestartFromPickleWithStopConditions(unittest.TestCase):
+    """
+    Covers two restart-from-pickle scenarios:
+
+    1. stop_before / stop_after references a step that already appears in
+       the pickle's completed_steps → planned_steps must be empty (nothing
+       to re-run).
+
+    2. The previous run halted after 'fit_binary_lens:est_binary_params';
+       the resumed run must plan fit_binary_models as its first step.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_path = self.tmp_dir.name
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    # ------------------------------------------------------------------
+    # Small helpers
+    # ------------------------------------------------------------------
+
+    def _pkl_path(self, name='state.pkl'):
+        return os.path.join(self.tmp_path, name)
+
+    def _make_point_lens_fitter(self, restart_file, **kwargs):
+        defaults = dict(
+            files=GROUND_DATA_FILES,
+            coords=COORDS,
+            fit_type='point_lens',
+            renormalize_errors=False)
+        defaults.update(kwargs)
+        return MMEXOFASTFitter(restart_file=restart_file, **defaults)
+
+    def _make_binary_lens_fitter(self, restart_file, **kwargs):
+        defaults = dict(
+            files=GROUND_DATA_FILES,
+            coords=COORDS,
+            fit_type='binary_lens',
+            renormalize_errors=True,
+            parallax_grid=True)
+        defaults.update(kwargs)
+        return MMEXOFASTFitter(restart_file=restart_file, **defaults)
+
+    # ------------------------------------------------------------------
+    # Scenario 1a – stop_after step is already in completed_steps
+    # ------------------------------------------------------------------
+
+    def test_stop_after_already_completed_yields_empty_plan(self):
+        """
+        When the restart pickle's completed_steps already contain the step
+        named in stop_after, planned_steps is empty: the target has already
+        been reached and there is nothing left to run.
+        """
+        # Pickle records est_pl_params as done; stop_after points to the
+        # same step → no remaining work within the stop window.
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS, 'est_pl_params'))
+        pkl = self._pkl_path()
+        _make_fake_pickle(pkl, completed)
+
+        fitter = self._make_point_lens_fitter(
+            restart_file=pkl,
+            stop_after='fit_static_point_lens:est_pl_params',
+            dry_run=True)
+        fitter.fit()
+
+        actual = [(step.name, step.stage) for step in fitter.planned_steps]
+        self.assertEqual(actual, [])
+
+    # ------------------------------------------------------------------
+    # Scenario 1b – stop_before step is already in completed_steps
+    # ------------------------------------------------------------------
+
+    def test_stop_before_already_completed_yields_empty_plan(self):
+        """
+        When the restart pickle's completed_steps already contain the step
+        named in stop_before, the workflow has gone past the intended
+        stopping point; planned_steps is empty.
+        """
+        # Pickle records fit_pspl as done; stop_before points to fit_pspl
+        # → all steps admissible under the stop_before constraint are
+        # already completed.
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS, 'fit_pspl'))
+        pkl = self._pkl_path()
+        _make_fake_pickle(pkl, completed)
+
+        fitter = self._make_point_lens_fitter(
+            restart_file=pkl,
+            stop_before='fit_static_point_lens:fit_pspl',
+            dry_run=True)
+        fitter.fit()
+
+        actual = [(step.name, step.stage) for step in fitter.planned_steps]
+        self.assertEqual(actual, [])
+
+    # ------------------------------------------------------------------
+    # Scenario 2 – resume after est_binary_params
+    # ------------------------------------------------------------------
+
+    def test_restart_after_est_binary_params_plans_fit_binary_models(self):
+        """
+        Restarting from a pickle where the previous binary-lens run halted
+        after 'fit_binary_lens:est_binary_params' produces a plan whose
+        first step is fit_binary_models, followed by check_binary_renorm
+        and parallax_grids.
+        """
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS_BINARY, 'est_binary_params'))
+        pkl = self._pkl_path()
+        _make_fake_pickle(pkl, completed)
+
+        fitter = self._make_binary_lens_fitter(
+            restart_file=pkl, dry_run=True)
+        fitter.fit()
+
+        expected = (
+            _STEPS_FIT_BINARY[1:] +          # fit_binary_models only
+            _STEPS_CHECK_BINARY_RENORM +
+            _STEPS_PARALLAX_GRIDS
+        )
+        actual = [(step.name, step.stage) for step in fitter.planned_steps]
+        self.assertEqual(actual, expected)
+
+def _make_fake_pickle_with_stop_conditions(path, completed_steps,
+                                           stop_before=None,
+                                           stop_after=None,
+                                           dry_run=False):
+    """
+    Like _make_fake_pickle, but also embeds stop_before, stop_after, and
+    dry_run in the saved config section. Used to verify that the loader
+    ignores invocation directives stored in a previous run's pickle.
+    """
+    state = {
+        'completed_steps': [(s.name, s.stage) for s in completed_steps],
+    }
+    config = {
+        'stop_before': stop_before,
+        'stop_after':  stop_after,
+        'dry_run':     dry_run,
+    }
+    data = {'config': config, 'state': state}
+    with open(path, 'wb') as f:
+        pickle.dump(data, f)
+
+
+class TestRestartIgnoresPickledStopConditions(unittest.TestCase):
+    """
+    If a previous run saved stop_before, stop_after, or dry_run into its
+    pickle's config section, a new run that loads that pickle without
+    specifying those arguments must not inherit them. The resumed run
+    should continue past the old stopping point, and dry_run must not
+    silently suppress execution.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_path = self.tmp_dir.name
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def _pkl_path(self, name='state.pkl'):
+        return os.path.join(self.tmp_path, name)
+
+    def _make_fitter(self, restart_file, **kwargs):
+        defaults = dict(
+            files=GROUND_DATA_FILES,
+            coords=COORDS,
+            fit_type='point_lens',
+            renormalize_errors=False,
+            dry_run=True)          # dry_run=True on the *new* fitter so we
+        defaults.update(kwargs)    # can inspect planned_steps safely
+        return MMEXOFASTFitter(restart_file=restart_file, **defaults)
+
+    def test_pickled_stop_before_is_not_restored(self):
+        """
+        A pickle whose config contains stop_before='fit_static_point_lens:fit_pspl'
+        must not re-impose that stop when the new fitter is constructed
+        without an explicit stop_before. fit_pspl and later steps must appear
+        in planned_steps.
+
+        completed_steps ends at run_ef_grid — well before the stop point.
+        If stop_before were incorrectly restored it would truncate the plan
+        to [est_pl_params] only (everything before fit_pspl that remains).
+        Asserting fit_pspl is present is therefore a genuine discriminator
+        between bug-present and bug-absent.
+
+        The previous version ended completed_steps at est_pl_params
+        (immediately before fit_pspl). Both the buggy and correct
+        implementations then plan fit_pspl as the next step — by coincidence
+        in the buggy case — so the test could not catch the bug.
+        """
+        # End at run_ef_grid so there is a real gap between completed work
+        # and the stop_before cutoff.
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS, 'run_ef_grid'))
+        pkl = self._pkl_path()
+        _make_fake_pickle_with_stop_conditions(
+            pkl, completed,
+            stop_before='fit_static_point_lens:est_pl_params')  # ← bug bait
+
+        fitter = self._make_fitter(restart_file=pkl)  # no stop_before
+        fitter.fit()
+
+        actual = [(step.name, step.stage) for step in fitter.planned_steps]
+        # fit_pspl must appear; if stop_before were restored it would be absent
+        self.assertIn(('fit_pspl', 'fit_static_point_lens'), actual)
+
+    def test_pickled_stop_after_is_not_restored(self):
+        """
+        A pickle whose config contains stop_after='event_search:run_ef_grid'
+        must not re-impose that stop when the new fitter is constructed
+        without an explicit stop_after. est_pl_params and later steps must
+        appear in planned_steps.
+        """
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS, 'run_ef_grid'))
+        pkl = self._pkl_path()
+        _make_fake_pickle_with_stop_conditions(
+            pkl, completed,
+            stop_after='event_search:run_ef_grid')           # ← bug bait
+
+        fitter = self._make_fitter(restart_file=pkl)         # no stop_after
+        fitter.fit()
+
+        actual = [(step.name, step.stage) for step in fitter.planned_steps]
+        self.assertIn(('est_pl_params', 'fit_static_point_lens'), actual)
+
+    def test_pickled_dry_run_is_not_restored(self):
+        """
+        A pickle whose config contains dry_run=True must not suppress
+        execution when the new fitter is constructed with dry_run=False.
+        completed_steps must be non-empty after fit() returns, proving
+        that the execution loop actually ran rather than being skipped.
+        """
+        completed = _make_noop_steps(
+            steps_through(EXPECTED_STEPS, 'run_ef_grid'))
+        pkl = self._pkl_path()
+        _make_fake_pickle_with_stop_conditions(
+            pkl, completed,
+            dry_run=True)                                    # ← bug bait
+
+        with patch_fitter_methods(
+                self,
+                # Construct a temporary fitter just to get a patchable
+                # instance; the real fitter is created inside the with-block.
+                MMEXOFASTFitter(
+                    files=GROUND_DATA_FILES,
+                    coords=COORDS,
+                    fit_type='point_lens',
+                    renormalize_errors=False,
+                    dry_run=True),
+                EXPECTED_STEPS) as stack:
+
+            fitter = MMEXOFASTFitter(
+                files=GROUND_DATA_FILES,
+                coords=COORDS,
+                fit_type='point_lens',
+                renormalize_errors=False,
+                restart_file=pkl,
+                dry_run=False,                               # explicit False
+                stop_after='fit_static_point_lens:est_pl_params')
+
+            # Re-attach mocks to the real fitter's methods.
+            for step_name, method_name in _STEP_TO_METHOD.items():
+                if hasattr(fitter, method_name):
+                    setattr(fitter, method_name,
+                            stack.mocks.get(step_name,
+                                            MagicMock(return_value=None)))
+            fitter.fit()
+
+        # At least est_pl_params must have been executed, not just planned.
+        completed_names = [step.name for step in fitter.completed_steps
+                           if step.name != 'run_ef_grid']   # pre-loaded step
+        self.assertIn('est_pl_params', completed_names)

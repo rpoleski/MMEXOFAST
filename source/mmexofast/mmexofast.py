@@ -480,8 +480,6 @@ class MMEXOFASTFitter:
         'primary_location',
         'primary_dataset',
         'emcee_settings',
-        'stop_before',
-        'stop_after',
     ]
 
     PARALLAX_GRID_PARAMS_COARSE = {
@@ -565,6 +563,8 @@ class MMEXOFASTFitter:
 
         # Execution-time controls (not persisted in CONFIG_KEYS)
         self.dry_run = dry_run
+        self.stop_before = stop_before
+        self.stop_after = stop_after
 
         # WorkflowStep tracking
         self.completed_steps: list[WorkflowStep] = []
@@ -834,6 +834,10 @@ class MMEXOFASTFitter:
             )
 
         self.planned_steps = self._build_remaining_steps()
+        if len(self.completed_steps) > 0:
+            logger.info('\nCompleted steps \n%s\n', '\n'.join(
+                ['{0}: {1}'.format(step.stage, step.name) for step in self.completed_steps]))
+
         if len(self.planned_steps) == 0:
             logger.info('\nNo workflow steps to execute.\n')
         else:
@@ -1848,14 +1852,15 @@ class MMEXOFASTFitter:
                 model=model,
                 datasets=self.datasets,
             )
-            if event.get_chi2() > best_pspl.chi2:
+            if event.get_chi2() > best_pspl.chi2():
                 continue
 
             # Do the fit
             anomaly_fitter = AnomalyFitter(
                 datasets=self.datasets,
-                initial_guess=params,
+                initial_guess=params.ulens,
                 anomaly_lc_params=self.intermediate_results.anomaly_lc_params,
+                mag_methods=params.mag_methods,
                 model_config=self.model_config,
                 event_config=self.event_config
             )
@@ -1865,7 +1870,7 @@ class MMEXOFASTFitter:
             logger.info(f'Fitted params ({key}): {results.best}')
 
             # Save the results to all results
-            key = FitKey(
+            fit_key = FitKey(
                lens_type=LensType.BINARY,
                source_type=SourceType.FINITE,  # TODO: In the future, want to allow for rho=0 fits.
                parallax_branch=ParallaxBranch.NONE,
@@ -1874,7 +1879,7 @@ class MMEXOFASTFitter:
             )
             self.all_fit_results.set(
                 FitRecord.from_full_result(
-                    model_key=key,
+                    model_key=fit_key,
                     full_result=results,
                     renorm_factors=self.renorm_factors,
                     fixed=False,

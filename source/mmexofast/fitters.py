@@ -618,11 +618,18 @@ class EmceeLCFitter(MulensFitter):
         starting_vector = []
         for _ in range(n_walkers):
             walker = []
-            for param in self.parameters_to_fit:
-                value = self.initial_guess[param]
-                sigma = (self.sigmas or {}).get(param)
+            for emcee_param in self.parameters_to_fit:
+                param = self.get_parameter_name(emcee_param)
+                if param == emcee_param:
+                    value = self.initial_guess[param]
+                else:
+                    value = 10.**self.initial_guess[param]
+
+                sigma = (self.sigmas or {}).get(emcee_param)
+
                 if sigma is not None:
                     value = value + np.random.normal(0., sigma)
+
                 walker.append(value)
             starting_vector.append(walker)
         return starting_vector

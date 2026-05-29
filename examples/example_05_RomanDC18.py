@@ -29,7 +29,7 @@ def fit_lc(lc_num, verbose=False):
         no_parallax=True,
         log_file=os.path.join(output_dir, file_prefix + '.log'),
         restart_file=os.path.join(output_dir, file_prefix + '.pkl'),
-        stop_after='fit_binary_lens:est_binary_params',
+        #stop_after='fit_binary_lens:est_binary_params',
         limb_darkening_coeffs_gamma={'W149': 0., 'Z087': 0.},
         output_config=mmexo.OutputConfig(
             output_dir=Path(output_dir), file_prefix=file_prefix, save_plots=True, save_table=True,
@@ -66,7 +66,7 @@ slow_parallax = [124, 128, 217] # 66 is broke
 dip_anom = [47, 74, 95, 103]
 bad_t0 = [12, 40, 81, 107, 208, 217, 227]
 
-#lc_nums = [227]
+lc_nums = [32]
 for lc_num in np.sort(lc_nums):
     print('\n...Fitting light curve {0}...'.format(lc_num))
     try:
