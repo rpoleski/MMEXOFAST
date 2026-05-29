@@ -405,82 +405,94 @@ class SFitFitter(MulensFitter):
         self.best = best
 
 
-class AnomalyFitter(MulensFitter):
+class EmceeLCFitter(MulensFitter):
     """
-    Base class for fitting microlensing anomalies using emcee.
+    Pure emcee mechanism for fitting microlensing light curves.
 
-    Extends ``MulensFitter`` with emcee-based MCMC sampling and likelihood,
-    prior, and probability functions. Provides the ``event`` property,
-    ``make_emcee_vector_from_ModelParameters()``, base ``emcee_settings``
-    setup, and pickling support. Intended to be subclassed for specific
-    anomaly types (e.g. ``WidePlanetFitter``).
+    Extends :class:`MulensFitter` with MCMC sampling via emcee.  The starting
+    ensemble is built by Gaussian perturbation of ``initial_guess`` scaled by
+    ``sigmas``.  All domain-specific policy — parameter estimation, ensemble
+    initialisation, log-space defaults — lives in subclasses.
 
     Parameters
     ----------
-    anomaly_lc_params : dict, optional
-        Parameters describing the anomaly light curve. Used to estimate
-        initial model parameters in ``estimate_initial_parameters()``.
-        See ``mmexofast.estimate_params.AnomalyPropertyEstimator.get_anomaly_lc_parameters()``
-        for the expected structure.
-    datasets : list, optional
-        List of MulensModel.MulensData objects. Inherited from ``MulensFitter``
-        but also accepted here directly.
+    initial_guess : dict, optional
+        Starting parameter values keyed by parameter name.  Keys may carry a
+        ``log_`` prefix (e.g. ``'log_rho'``) to indicate sampling in log10
+        space; :meth:`initialize_event` converts them back to linear space.
+        If ``parameters_to_fit`` is not supplied it defaults to
+        ``list(initial_guess.keys())``.
     emcee_settings : dict, optional
-        Settings for the emcee sampler. Any missing keys are filled in from
-        ``default_emcee_settings``. Valid keys are ``'n_walkers'``,
-        ``'n_burn'``, ``'n_steps'``, ``'acceptance_fraction'``, and optionally
-        ``'temperature'``.
+        Settings for the emcee sampler.  Missing keys are filled from
+        :attr:`default_emcee_settings`.  Valid keys: ``'n_walkers'``,
+        ``'n_burn'``, ``'n_steps'``, ``'acceptance_fraction'``, and
+        optionally ``'temperature'``.  ``'n_dim'`` is added automatically
+        from ``len(parameters_to_fit)`` once that list is finalised.
 
     Class Attributes
     ----------------
     default_emcee_settings : dict
-        Default emcee settings: ``{'n_walkers': 40, 'n_burn': 500,
-        'n_steps': 1000, 'acceptance_fraction': 0.1}``.
+        ``{'n_walkers': 40, 'n_burn': 500, 'n_steps': 1000,
+        'acceptance_fraction': 0.1}``
 
     Notes
     -----
-    ``initialize_event()`` and ``make_starting_vector()`` must be implemented
-    by subclasses. ``estimate_initial_parameters()`` is also intended to be
-    overridden.
+    After ``event.get_chi2()`` has been evaluated the ``MulensModel.Event``
+    object cannot be pickled.  :meth:`__getstate__` resets ``_event`` to
+    ``None`` before serialisation; call :meth:`initialize_event` again after
+    unpickling if needed.
 
-    After ``event.get_chi2()`` has been evaluated, the ``MulensModel.Event``
-    object cannot be pickled. ``__getstate__`` resets ``_event`` to ``None``
-    before pickling; call ``initialize_event()`` again after unpickling if
-    needed.
+    Subclasses that finalise ``parameters_to_fit`` *after*
+    ``super().__init__()`` are responsible for updating ``'n_dim'`` in
+    :attr:`emcee_settings` themselves.
 
-    ``datasets`` appears in both ``MulensFitter.__init__()`` and
-    ``AnomalyFitter.__init__()``, which may cause confusion. This could
-    be simplified by relying solely on the parent class argument.
+    All other parameters (``datasets``, ``sigmas``, ``model_config``,
+    ``event_config``, ``pool``, …) are inherited from :class:`MulensFitter`.
     """
 
     default_emcee_settings = {
-        'n_walkers': 40, 'n_burn': 500, 'n_steps': 1000, 'acceptance_fraction': 0.1}
+        'n_walkers': 40, 'n_burn': 500, 'n_steps': 1000,
+        'acceptance_fraction': 0.1,
+    }
 
-    def __init__(self, datasets=None, anomaly_lc_params=None, emcee_settings=None, **kwargs):
+    def __init__(self, initial_guess=None, emcee_settings=None, **kwargs):
         super().__init__(**kwargs)
-        self.anomaly_lc_params = anomaly_lc_params
-        self.datasets = datasets
+        self.initial_guess = initial_guess
         self._event = None
 
-        # Start from a copy of the defaults, then override with any user-supplied values.
-        # Using a copy avoids the bug of mutating the class-level dict directly.
+        # Default parameters_to_fit to initial_guess keys when not explicitly
+        # provided via kwargs → MulensFitter.__init__.
+        if self._parameters_to_fit is None and initial_guess is not None:
+            self.parameters_to_fit = list(initial_guess.keys())
+
+        # Merge user-supplied settings on top of class defaults.
         settings = dict(self.default_emcee_settings)
         if emcee_settings is not None:
             settings.update(emcee_settings)
         self.emcee_settings = settings
 
+        # Register n_dim now if parameters_to_fit is already known.
+        # Subclasses that finalise parameters_to_fit *after* super().__init__()
+        # must update 'n_dim' themselves.
+        if self._parameters_to_fit is not None:
+            self.emcee_settings.setdefault('n_dim', len(self._parameters_to_fit))
+
+    # ------------------------------------------------------------------ #
+    # Pickling support                                                     #
+    # ------------------------------------------------------------------ #
+
     def __getstate__(self):
         """
-        Return the object state for pickling, with ``_event`` set to ``None``.
+        Return the object state for pickling with ``_event`` set to ``None``.
 
         ``MulensModel.Event`` objects cannot be pickled after ``get_chi2()``
-        has been called. This method drops the event before serialisation.
-        Call ``initialize_event()`` after unpickling to restore it.
+        has been called.  Call :meth:`initialize_event` after unpickling to
+        rebuild the event.
 
         Returns
         -------
         dict
-            Object ``__dict__`` with ``_event`` replaced by ``None``.
+            ``__dict__`` with ``_event`` replaced by ``None``.
         """
         state = self.__dict__.copy()
         state['_event'] = None
@@ -493,28 +505,13 @@ class AnomalyFitter(MulensFitter):
         Parameters
         ----------
         state : dict
-            State dictionary produced by ``__getstate__``.
-
-        Notes
-        -----
-        After unpickling, ``_event`` will be ``None``; call
-        ``initialize_event()`` to rebuild it if needed.
+            State dictionary produced by :meth:`__getstate__`.
         """
         self.__dict__.update(state)
 
-    def estimate_initial_parameters(self):
-        """
-        Estimate initial model parameters from the anomaly light curve parameters.
-
-        Intended to be overridden by subclasses.
-
-        Notes
-        -----
-        This method is not formally declared as abstract but is intended to be
-        overridden by subclasses. Consider using ``abc.abstractmethod`` to enforce
-        this, consistent with ``initialize_event()`` and ``make_starting_vector()``.
-        """
-        pass
+    # ------------------------------------------------------------------ #
+    # Parameter helpers                                                    #
+    # ------------------------------------------------------------------ #
 
     def get_parameter_name(self, parameter):
         """
@@ -528,36 +525,17 @@ class AnomalyFitter(MulensFitter):
         Returns
         -------
         str
-            Parameter name with ``log_`` prefix removed if present, e.g.
-            ``'rho'`` or ``'t_E'``.
+            Name with ``log_`` prefix removed, e.g. ``'rho'`` or ``'t_E'``.
         """
-        if 'log_' in parameter:
-            key = parameter[4:]
-        else:
-            key = parameter
-
-        return key
-
-    def initialize_event(self):
-        """
-        Initialize the ``MulensModel.Event`` object.
-
-        Must be implemented by subclasses.
-
-        Raises
-        ------
-        NotImplementedError
-            If called on ``AnomalyFitter`` directly rather than a subclass.
-        """
-        raise NotImplementedError('Subclasses must implement initialize_event().')
+        if parameter.startswith('log_'):
+            return parameter[4:]
+        return parameter
 
     def make_emcee_vector_from_ModelParameters(self, parameters):
         """
-        Convert a ``MulensModel.ModelParameters`` object to an emcee parameter
-        vector.
+        Convert a ``MulensModel.ModelParameters`` object to an emcee vector.
 
-        Constructs a parameter vector corresponding to ``parameters_to_fit``,
-        converting parameters with a ``log_`` prefix to log10 space.
+        Parameters with a ``log_`` prefix are converted to log10 space.
 
         Parameters
         ----------
@@ -567,75 +545,119 @@ class AnomalyFitter(MulensFitter):
         Returns
         -------
         list
-            Parameter vector corresponding to ``parameters_to_fit``.
+            Vector of length ``len(parameters_to_fit)``.
 
         See Also
         --------
-        event.setter : Performs the inverse conversion from emcee vector to
-            model parameters.
+        event.setter : Performs the inverse conversion.
         """
         vector = []
         for parameter in self.parameters_to_fit:
             key = self.get_parameter_name(parameter)
-            value = parameters.__getattribute__(key)
+            value = getattr(parameters, key)
             if key != parameter:  # log_ prefix
                 value = np.log10(value)
             vector.append(value)
-
         return vector
 
-    def make_starting_vector(self):
+    # ------------------------------------------------------------------ #
+    # Event initialisation                                                 #
+    # ------------------------------------------------------------------ #
+
+    def initialize_event(self):
         """
-        Construct the starting vector for the emcee sampler.
+        Initialise the ``MulensModel.Event`` from :attr:`initial_guess`.
 
-        Must be implemented by subclasses.
-
-        Returns
-        -------
-        list
-            Starting vector for the emcee sampler, typically a list of
-            ``n_walkers`` parameter vectors.
+        Parameters with a ``log_`` prefix are converted from log10 to linear
+        space before the model is constructed.  Coordinates and flux-fixing
+        are applied via :attr:`model_config` and :attr:`event_config`.
 
         Raises
         ------
-        NotImplementedError
-            If called on ``AnomalyFitter`` directly rather than a subclass.
+        AttributeError
+            If :attr:`initial_guess` is ``None``.
         """
-        raise NotImplementedError('You need to implement make_starting_vector() for this class.')
+        if self.initial_guess is None:
+            raise AttributeError(
+                'initial_guess must be set before calling initialize_event().')
+
+        params = {}
+        for key, value in self.initial_guess.items():
+            actual_key = self.get_parameter_name(key)
+            params[actual_key] = 10. ** value if actual_key != key else value
+
+        model = self.model_config.build(
+            parameters=params,
+            magnification_methods=self.mag_methods,
+        )
+        self._event = self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Starting ensemble                                                    #
+    # ------------------------------------------------------------------ #
+
+    def make_starting_vector(self):
+        """
+        Build the emcee starting ensemble by Gaussian perturbation of
+        :attr:`initial_guess`.
+
+        Each walker is obtained by adding independent ``N(0, sigma)`` noise to
+        every component of :attr:`initial_guess`.  Parameters absent from
+        :attr:`sigmas` (or when :attr:`sigmas` is ``None``) are left at their
+        nominal value for every walker.
+
+        Returns
+        -------
+        list of list
+            ``n_walkers`` parameter vectors of length ``n_dim``.
+        """
+        n_walkers = self.emcee_settings['n_walkers']
+        starting_vector = []
+        for _ in range(n_walkers):
+            walker = []
+            for param in self.parameters_to_fit:
+                value = self.initial_guess[param]
+                sigma = (self.sigmas or {}).get(param)
+                if sigma is not None:
+                    value = value + np.random.normal(0., sigma)
+                walker.append(value)
+            starting_vector.append(walker)
+        return starting_vector
+
+    # ------------------------------------------------------------------ #
+    # Event property                                                       #
+    # ------------------------------------------------------------------ #
 
     @property
     def event(self):
         """
-        The ``MulensModel.Event`` object for the current fit.
+        The current ``MulensModel.Event`` object.
 
-        Returns
-        -------
-        MulensModel.Event or None
-            The current event object, or ``None`` if ``initialize_event()``
-            has not yet been called (or after unpickling).
-
-        See Also
-        --------
-        initialize_event : Creates the event object.
+        Returns ``None`` until :meth:`initialize_event` has been called
+        (or after unpickling).
         """
         return self._event
 
     @event.setter
     def event(self, theta):
         """
-        Update the event model parameters from an emcee parameter vector.
+        Update model parameters from an emcee parameter vector.
 
-        Converts logarithmic parameters from log10 space back to linear space.
+        Parameters with a ``log_`` prefix are converted from log10 to linear
+        space before assignment.
 
         Parameters
         ----------
         theta : array-like
-            Parameter vector corresponding to ``parameters_to_fit``.
+            Vector of length ``len(parameters_to_fit)``.
 
         Raises
         ------
         AttributeError
-            If the event has not been initialized via ``initialize_event()``.
+            If the event has not yet been initialised.
 
         See Also
         --------
@@ -644,96 +666,88 @@ class AnomalyFitter(MulensFitter):
         """
         if self._event is None:
             raise AttributeError(
-                'Event has not been created. Run initialize_event() first!')
-
+                'Event has not been created. Call initialize_event() first.')
         for parameter, value in zip(self.parameters_to_fit, theta):
             key = self.get_parameter_name(parameter)
             if key != parameter:  # log_ prefix
                 value = 10. ** value
             self._event.model.parameters.__setattr__(key, value)
 
+    # ------------------------------------------------------------------ #
+    # Likelihood / prior / probability                                     #
+    # ------------------------------------------------------------------ #
+
     def ln_like(self, theta):
         """
-        Log-likelihood function for the emcee sampler.
+        Log-likelihood for the emcee sampler (``-0.5 * chi2``).
 
-        Computes the log-likelihood as ``-0.5 * chi2``. If ``'temperature'`` is
-        present in ``emcee_settings``, chi2 is divided by the temperature squared
-        before computing the log-likelihood, implementing simulated annealing.
+        If ``'temperature'`` is present in :attr:`emcee_settings`, chi2 is
+        divided by the square of the temperature (simulated annealing).
 
         Parameters
         ----------
         theta : array-like
-            Parameter vector corresponding to ``parameters_to_fit``.
 
         Returns
         -------
         float
-            Log-likelihood value, or ``-np.inf`` if the model could not be
-            evaluated.
+            Log-likelihood, or ``-np.inf`` if evaluation failed.
 
         Notes
         -----
-        The bare ``except`` clause silently catches all exceptions, which may
-        make debugging difficult. Consider catching specific exceptions instead.
+        The bare ``except`` clause silently catches all exceptions; consider
+        catching specific exceptions to ease debugging.
         """
         self.event = theta
         try:
             chi2 = self.event.get_chi2()
-            if 'temperature' in self.emcee_settings.keys():
+            if 'temperature' in self.emcee_settings:
                 chi2 /= self.emcee_settings['temperature'] ** 2
         except:
             return -np.inf
-
         return -0.5 * chi2
 
     def ln_prior(self, theta):
         """
-        Log-prior function for the emcee sampler.
+        Log-prior: flat with hard lower bounds on positive-definite parameters.
 
-        Implements flat priors with hard boundaries. Rejects models where
-        ``t_E``, ``rho``, ``q``, or ``s`` are non-positive.
+        Rejects models where ``t_E``, ``rho``, ``q``, or ``s`` are
+        non-positive.
 
         Parameters
         ----------
         theta : array-like
-            Parameter vector corresponding to ``parameters_to_fit``.
 
         Returns
         -------
         float
-            0.0 if the parameters are within the prior bounds, ``np.inf``
-            otherwise.
+            ``0.0`` if all priors are satisfied; ``np.inf`` otherwise.
 
         Notes
         -----
-        Returns ``np.inf`` (rather than the more conventional ``-np.inf``)
-        for rejected models. This is handled correctly by ``ln_prob()``, which
-        checks ``np.isfinite(ln_prior_)``.
+        Returns ``np.inf`` (rather than ``-np.inf``) for rejected models;
+        this is handled correctly by :meth:`ln_prob`.
         """
         for key, value in zip(self.parameters_to_fit, theta):
-            if ((key == 't_E') or (key == 'rho') or (key == 'q') or (key == 's')) and (value <= 0.):
+            if key in ('t_E', 'rho', 'q', 's') and value <= 0.:
                 return np.inf
-
         return 0.0
 
     def ln_prob(self, theta):
         """
-        Log-probability function for the emcee sampler.
+        Log-probability: prior + likelihood.
 
-        Combines the log-prior and log-likelihood. Returns ``-np.inf`` if the
-        prior rejects the model, if the likelihood cannot be evaluated, or if
-        the likelihood is NaN (e.g. due to negative source fluxes).
+        Returns ``-np.inf`` when the prior is violated, when the likelihood
+        cannot be evaluated, or when the likelihood is NaN (e.g. negative
+        source fluxes).
 
         Parameters
         ----------
         theta : array-like
-            Parameter vector corresponding to ``parameters_to_fit``.
 
         Returns
         -------
         float
-            Sum of log-prior and log-likelihood, or ``-np.inf`` if the model
-            is rejected.
 
         See Also
         --------
@@ -744,201 +758,39 @@ class AnomalyFitter(MulensFitter):
         if not np.isfinite(ln_prior_):
             return -np.inf
         ln_like_ = self.ln_like(theta)
-
-        # In the cases that source fluxes are negative we want to return
-        # these as if they were not in priors.
         if np.isnan(ln_like_):
             return -np.inf
-
         return ln_prior_ + ln_like_
 
-
-class WidePlanetFitter(AnomalyFitter):
-    """
-    Fit a wide binary lens (planet) model to the data using emcee.
-
-    Extends ``AnomalyFitter`` for the specific case of a wide planet geometry.
-    By default, fits ``['t_0', 'u_0', 't_E', 'log_rho', 'log_s', 'log_q', 'alpha']``
-    with corresponding default sigmas ``{}``.
-    ``log_rho``, ``log_s``, and ``log_q`` are fitted in log10 space.
-
-    The ``event`` property, ``make_emcee_vector_from_ModelParameters()``,
-    ``__getstate__``/``__setstate__``, and base ``emcee_settings`` setup are
-    all inherited from ``AnomalyFitter``. This class is responsible only for
-    adding ``'n_dim'`` to ``emcee_settings`` once ``parameters_to_fit`` is
-    finalised.
-
-    Parameters
-    ----------
-    emcee_settings : dict, optional
-        Settings for the emcee sampler passed through to ``AnomalyFitter``.
-        ``'n_dim'`` is added automatically from ``len(parameters_to_fit)``
-        if not already present. See ``AnomalyFitter`` for other valid keys.
-
-    Notes
-    -----
-    If ``parameters_to_fit`` is provided, ``sigmas`` must also be provided,
-    otherwise an ``AttributeError`` is raised.
-
-    ``sigmas`` is a dict mapping parameter names to step sizes. Parameters
-    not in the dict default to ``None``:
-
-        - ``'t_0'``, ``'u_0'``, ``'t_E'``: should be provided by the user
-          from the PSPL fit sigmas, e.g.
-          ``sigmas={'t_0': 0.1, 'u_0': 0.01, 't_E': 0.04}``.
-        - ``'log_rho'``, ``'log_s'``, ``'log_q'``, ``'alpha'``: not required;
-          the ``WidePlanetEnsembleInitializer`` handles these internally.
-
-    All other parameters are inherited from ``AnomalyFitter`` and
-    ``MulensFitter``.
-
-    See Also
-    --------
-    AnomalyFitter : Parent class.
-    WidePlanetEnsembleInitializer : Builds the emcee starting ensemble.
-    WidePlanetGridSearchEstimator : Parameter estimator used within the
-        ensemble initializer.
-    """
-
-    def __init__(self, emcee_settings=None, **kwargs):
-        super().__init__(emcee_settings=emcee_settings, **kwargs)
-
-        if not ('parameters_to_fit' in kwargs.keys()):
-            self.parameters_to_fit = ['t_0', 'u_0', 't_E', 'log_rho', 'log_s', 'log_q', 'alpha']
-            if self.sigmas is None:
-                self.sigmas = {}
-        elif self.sigmas is None:
-            raise AttributeError('If parameters_to_fit is set, sigmas must also be set.')
-
-        # n_dim must be set after parameters_to_fit is finalised above.
-        # setdefault preserves any value the user may have passed explicitly.
-        self.emcee_settings.setdefault('n_dim', len(self.parameters_to_fit))
-
-        self._initializer = None
-        self._starting_vector = None
-        self._initial_model = None
-        self._mag_methods = None
-
-    def _make_starting_vector(self):
-        """
-        Construct the starting vector for the emcee sampler using
-        ``WidePlanetEnsembleInitializer``.
-
-        Runs ``n_walkers`` ``WidePlanetGridSearchEstimators`` with perturbed
-        PSPL parameters. The first estimator uses a broad default grid; its
-        best log_q and log_rho seed all subsequent estimators. Results are
-        sorted by chi2 and the top ``n_walkers`` rows are converted to emcee
-        parameter vectors.
-
-        Sets ``self.initial_model`` and ``self.mag_methods`` as side effects.
-
-        Returns
-        -------
-        list
-            List of ``n_walkers`` parameter vectors, each of length ``n_dim``.
-        """
-        self._initializer = WidePlanetEnsembleInitializer(
-            datasets=self.datasets,
-            anomaly_params=self.anomaly_lc_params,
-            sigmas=self.sigmas,
-            n_estimators=self.emcee_settings['n_walkers'],
-            pspl_chi2=getattr(self, 'pspl_chi2', None))
-
-        self.initial_model = self._initializer.initial_model
-        self.mag_methods = self._initializer.mag_methods
-
-        if self._event is None:
-            self.initialize_event()
-
-        df = self._initializer.results.sort_values('chi2')
-        n_walkers = self.emcee_settings['n_walkers']
-        top_rows = df.head(n_walkers)
-
-        starting_vector = []
-        for _, row in top_rows.iterrows():
-            params = {k: row[k] for k in
-                      ['t_0', 'u_0', 't_E', 's', 'q', 'rho', 'alpha']}
-            vector = self.make_emcee_vector_from_ModelParameters(
-                MulensModel.ModelParameters(params))
-            starting_vector.append(vector)
-
-        return starting_vector
-
-    @property
-    def initial_model(self):
-        if self._initial_model is None:
-            _ = self.starting_vector  # triggers _make_starting_vector
-        return self._initial_model
-
-    @initial_model.setter
-    def initial_model(self, value):
-        self._initial_model = value
-
-    @property
-    def mag_methods(self):
-        if self._mag_methods is None:
-            _ = self.starting_vector  # triggers _make_starting_vector
-        return self._mag_methods
-
-    @mag_methods.setter
-    def mag_methods(self, value):
-        self._mag_methods = value
-
-    @property
-    def starting_vector(self):
-        if self._starting_vector is None:
-            self._starting_vector = self._make_starting_vector()
-        return self._starting_vector
-
-    def initialize_event(self):
-        """
-        Initialize the ``MulensModel.Event`` object for the wide planet model.
-
-        Requires ``self.initial_model`` and ``self.mag_methods`` to be set,
-        which happens as side effects of accessing ``starting_vector``.
-        Coordinates and flux-fixing are applied via the inherited
-        ``event_config``, which is built from the constructor arguments
-        passed through ``MulensFitter.__init__``.
-
-        Raises
-        ------
-        AttributeError
-            If ``self.initial_model`` or ``self.mag_methods`` is not set.
-        """
-        if self.initial_model is None:
-            raise AttributeError(
-                'initial_model is not set. Access starting_vector first.')
-
-        if self.mag_methods is None:
-            raise AttributeError(
-                'self.mag_methods is not set. Access starting_vector first.')
-
-        model = self.model_config.build(
-            parameters=self.initial_model,
-            magnification_methods=self.mag_methods,
-            default_magnification_method='point_source_point_lens',
-        )
-        self._event = self.event_config.build(
-            model=model,
-            datasets=self.datasets,
-        )
+    # ------------------------------------------------------------------ #
+    # Runner                                                               #
+    # ------------------------------------------------------------------ #
 
     def run(self, verbose=False):
         """
-        Fit the wide planet model using emcee MCMC sampling.
+        Fit the model using emcee MCMC sampling.
 
-        Runs ``WidePlanetEnsembleInitializer`` to build the starting ensemble,
-        initializes the event, and runs the emcee sampler. Aborts early if the
-        mean acceptance fraction drops below ``emcee_settings['acceptance_fraction']``.
+        Calls :meth:`make_starting_vector` to build the ensemble (subclass
+        implementations may initialise the event as a side-effect).  If the
+        event is still uninitialised after that call, :meth:`initialize_event`
+        is invoked.  Sampling aborts early if the mean acceptance fraction
+        drops below ``emcee_settings['acceptance_fraction']``.
+
+        On completion, sets :attr:`best` to the highest-probability
+        post-burn sample plus ``'chi2'``.
 
         Parameters
         ----------
         verbose : bool, optional
-            If True, prints the fitted parameters with 16th, 50th, and 84th
-            percentile uncertainties, and logs acceptance fraction every 100
-            steps. Default is False.
+            If ``True``, prints 16th/50th/84th-percentile summaries and logs
+            the acceptance fraction every 100 steps.  Default ``False``.
         """
-        starting_vector = self.starting_vector  # triggers full initialization
+        starting_vector = self.make_starting_vector()
+
+        # Subclass make_starting_vector() may initialise the event as a
+        # side-effect; only call initialize_event() when that has not happened.
+        if self._event is None:
+            self.initialize_event()
 
         if self.pool:
             ncpu = cpu_count()
@@ -946,29 +798,31 @@ class WidePlanetFitter(AnomalyFitter):
             os.environ["OMP_NUM_THREADS"] = "1"
             pool = Pool()
             self.sampler = emcee.EnsembleSampler(
-                self.emcee_settings['n_walkers'], self.emcee_settings['n_dim'],
-                self.ln_prob, pool=pool)
+                self.emcee_settings['n_walkers'],
+                self.emcee_settings['n_dim'],
+                self.ln_prob,
+                pool=pool)
         else:
             self.sampler = emcee.EnsembleSampler(
-                self.emcee_settings['n_walkers'], self.emcee_settings['n_dim'],
+                self.emcee_settings['n_walkers'],
+                self.emcee_settings['n_dim'],
                 self.ln_prob)
 
         try:
-            for sample in self.sampler.sample(
+            for _ in self.sampler.sample(
                     starting_vector, iterations=self.emcee_settings['n_steps']):
 
-                # Only check every 100 steps, and only if a threshold is set
-                if ((self.sampler.iteration % 100) or
-                        (self.emcee_settings.get('acceptance_fraction') is None)):
+                if (self.sampler.iteration % 100) != 0:
+                    continue
+                if self.emcee_settings.get('acceptance_fraction') is None:
                     continue
 
                 mean_af = np.mean(self.sampler.acceptance_fraction)
 
                 if verbose:
-                    print(
-                        self.sampler.iteration,
-                        '{0:.3f}'.format(mean_af),
-                        self.sampler.acceptance_fraction)
+                    print(self.sampler.iteration,
+                          '{0:.3f}'.format(mean_af),
+                          self.sampler.acceptance_fraction)
 
                 if mean_af < self.emcee_settings['acceptance_fraction']:
                     print('Acceptance fraction too low! Minimum set to:',
@@ -980,21 +834,392 @@ class WidePlanetFitter(AnomalyFitter):
                 pool.close()
                 pool.join()
 
-        samples = self.sampler.chain[:, self.emcee_settings['n_burn']:, :].reshape(
-            (-1, self.emcee_settings['n_dim']))
+        n_burn = self.emcee_settings['n_burn']
+        n_dim = self.emcee_settings['n_dim']
+        samples = self.sampler.chain[:, n_burn:, :].reshape((-1, n_dim))
 
         if verbose:
-            results = np.percentile(samples, [16, 50, 84], axis=0)
+            percentiles = np.percentile(samples, [16, 50, 84], axis=0)
             print("Fitted parameters:")
-            for i in range(self.emcee_settings['n_dim']):
-                r = results[1, i]
+            for i in range(n_dim):
+                med = percentiles[1, i]
                 print("${:.5f}^{{+{:.5f}}}_{{-{:.5f}}}$ &".format(
-                    r, results[2, i] - r, r - results[0, i]))
+                    med, percentiles[2, i] - med, med - percentiles[0, i]))
 
-        prob = self.sampler.lnprobability[:, self.emcee_settings['n_burn']:].reshape((-1))
+        prob = self.sampler.lnprobability[:, n_burn:].reshape((-1))
         best_index = np.argmax(prob)
-        self.best_theta = samples[best_index, :]
+        self.best_theta = samples[best_index]
         self.event = self.best_theta
 
-        self.best = self.event.model.parameters.parameters
-        self.best['chi2'] = self.event.get_chi2()
+        self.best = self._event.model.parameters.parameters
+        self.best['chi2'] = self._event.get_chi2()
+
+
+class AnomalyFitter(EmceeLCFitter):
+    """
+    Emcee fitter with automatic sigma estimation for microlensing anomaly fitting.
+
+    Extends :class:`EmceeLCFitter` by adding a :attr:`default_parameters_to_fit`
+    and automatic :attr:`sigmas` computation when sigmas are not explicitly
+    provided.
+
+    Unlike :class:`EmceeLCFitter`, ``initial_guess`` is required and
+    ``parameters_to_fit`` defaults to :attr:`default_parameters_to_fit` rather
+    than ``initial_guess.keys()``.  Users providing a custom ``initial_guess``
+    must therefore include values for every parameter in
+    :attr:`default_parameters_to_fit`, or supply ``parameters_to_fit``
+    explicitly to restrict or reorder the fitted set.
+
+    Sigma estimation follows a three-tier priority:
+
+    1. **Explicit** — if ``sigmas`` is provided it is used unchanged.
+
+    2. **From** ``anomaly_lc_params`` — if ``sigmas`` is not provided but
+       ``anomaly_lc_params`` is, then for ``t_0`` and ``t_E``::
+
+           sigma_t0 = sigma_tE = 0.01 * anomaly_lc_params['dt']
+
+       All other parameters fall through to tier 3.
+
+    3. **Defaults from** ``initial_guess``::
+
+           t_0   :  0.00001
+           u_0   :  0.001 * |u_0|
+           t_E   :  0.001 * |t_E|
+           alpha :  0.001
+           log_X :  0.0001    # equivalent to sigma_X ~ 0.02% of X
+
+       Parameters not matching any recognised pattern are omitted from
+       ``sigmas``; the corresponding walkers are not perturbed in that
+       dimension by :meth:`EmceeLCFitter.make_starting_vector`.
+
+    Class Attributes
+    ----------------
+    default_parameters_to_fit : list
+        ``['t_0', 'u_0', 't_E', 'log_rho', 'log_s', 'log_q', 'alpha']``
+
+    Parameters
+    ----------
+    initial_guess : dict
+        Starting parameter values keyed by parameter name.  Required.  Must
+        contain a value for every parameter in :attr:`default_parameters_to_fit`
+        (or every parameter in ``parameters_to_fit`` if that is supplied
+        explicitly).  Keys may carry a ``log_`` prefix for parameters sampled
+        in log10 space.
+    anomaly_lc_params : dict, optional
+        Parameters describing the anomaly light curve, as returned by
+        ``AnomalyPropertyEstimator.get_anomaly_lc_parameters()``.  Used only
+        to derive sigmas for ``t_0`` and ``t_E`` via the ``'dt'`` key.  Has
+        no effect on ``initial_guess`` and no effect when ``sigmas`` is already
+        provided explicitly.
+    emcee_settings : dict, optional
+        Passed through to :class:`EmceeLCFitter`.
+
+    Notes
+    -----
+    :attr:`sigmas` are never derived from ``anomaly_lc_params`` directly.
+    The typical source for PSPL parameter sigmas is the result of a prior PSPL
+    fit (e.g. ``pspl_results.sigmas``), passed as explicit ``sigmas``.
+
+    Subclasses that build ``initial_guess`` lazily (e.g.
+    :class:`AnomalyFitterEnsembleInitialization`) should pass
+    ``initial_guess=None`` to suppress automatic sigma computation, handling
+    it themselves once ``initial_guess`` is available.
+
+    All other parameters (``datasets``, ``sigmas``, ``model_config``,
+    ``event_config``, ``pool``, …) are inherited from :class:`EmceeLCFitter`
+    and :class:`MulensFitter`.
+
+    See Also
+    --------
+    EmceeLCFitter : Parent class providing the full emcee mechanism.
+    AnomalyFitterEnsembleInitialization : Subclass using
+        ``WidePlanetEnsembleInitializer`` for the starting ensemble.
+    """
+
+    default_parameters_to_fit = [
+        't_0', 'u_0', 't_E', 'log_rho', 'log_s', 'log_q', 'alpha']
+
+    def __init__(
+            self, initial_guess, anomaly_lc_params=None,
+            emcee_settings=None, **kwargs):
+        super().__init__(
+            initial_guess=initial_guess,
+            emcee_settings=emcee_settings,
+            **kwargs)
+        if self.mag_methods is None:
+            raise ValueError(
+                'mag_methods must be provided for AnomalyFitter.')
+
+        self.anomaly_lc_params = anomaly_lc_params
+
+        # Use default_parameters_to_fit when not explicitly provided.
+        # This overrides EmceeLCFitter's default of list(initial_guess.keys()),
+        # so initial_guess must contain values for all default parameters.
+        if 'parameters_to_fit' not in kwargs:
+            self.parameters_to_fit = list(self.default_parameters_to_fit)
+            # n_dim must reflect the updated parameters_to_fit.  Direct
+            # assignment rather than setdefault ensures a stale value from
+            # EmceeLCFitter (set from initial_guess.keys()) is overwritten.
+            self.emcee_settings['n_dim'] = len(self.parameters_to_fit)
+
+        # Compute sigmas only when not explicitly provided and initial_guess
+        # is available.  The guard on initial_guess allows subclasses that
+        # build initial_guess lazily to pass None and defer sigma computation.
+        if self.sigmas is None and self.initial_guess is not None:
+            self.sigmas = self._compute_sigmas()
+
+    def _compute_sigmas(self):
+        """
+        Compute sigmas following the three-tier priority.
+
+        Starts from :meth:`_default_sigmas`, then overrides ``t_0`` and
+        ``t_E`` from ``anomaly_lc_params['dt']`` if ``anomaly_lc_params`` is
+        set.
+
+        Returns
+        -------
+        dict
+            Sigma for each recognised parameter in :attr:`parameters_to_fit`.
+        """
+        sigmas = self._default_sigmas()
+
+        if self.anomaly_lc_params is not None:
+            dt = self.anomaly_lc_params['dt']
+            if 't_0' in self.parameters_to_fit:
+                sigmas['t_0'] = 0.01 * dt
+            if 't_E' in self.parameters_to_fit:
+                sigmas['t_E'] = 0.01 * dt
+
+        return sigmas
+
+    def _default_sigmas(self):
+        """
+        Compute default sigmas from :attr:`initial_guess`.
+
+        For ``log_X`` parameters the step size is derived so that the
+        equivalent linear-space step equals 0.01% of the parameter value:
+
+        .. math::
+
+            \\sigma_{\\log X} = \\frac{\\sigma_X}{X \\ln 10}
+                              = \\frac{0.0001}{\\ln 10}
+
+        Parameters not matching any recognised pattern are omitted.
+
+        Returns
+        -------
+        dict
+            Default sigma for each recognised parameter in
+            :attr:`parameters_to_fit`.
+        """
+        sigmas = {}
+        for param in self.parameters_to_fit:
+            if param == 't_0':
+                sigmas[param] = 0.00001
+            elif param == 'u_0':
+                sigmas[param] = 0.001 * abs(self.initial_guess['u_0'])
+            elif param == 't_E':
+                sigmas[param] = 0.001 * abs(self.initial_guess['t_E'])
+            elif param == 'alpha':
+                sigmas[param] = 0.001
+            elif param.startswith('log_'):
+                sigmas[param] = 0.0001
+
+        return sigmas
+
+
+class WidePlanetEnsembleInitialization(AnomalyFitter):
+    """
+    Anomaly fitter using ``WidePlanetEnsembleInitializer`` for the starting
+    ensemble.
+
+    Extends :class:`AnomalyFitter` for the wide-planet geometry.  Overrides
+    :meth:`make_starting_vector` to drive ``WidePlanetEnsembleInitializer`` and
+    :meth:`initialize_event` to use the resulting ``initial_model`` and
+    ``mag_methods``.
+
+    :attr:`default_parameters_to_fit` is inherited from :class:`AnomalyFitter`.
+    ``parameters_to_fit`` and ``'n_dim'`` are finalised in the parent
+    ``__init__``; this class adds no further changes to either.
+
+    ``initial_guess`` is built lazily as a side-effect of the first call to
+    :meth:`make_starting_vector`; ``None`` is passed to the parent to suppress
+    automatic sigma computation.  Sigmas passed explicitly (typically PSPL fit
+    sigmas) are forwarded to ``WidePlanetEnsembleInitializer`` for PSPL
+    perturbation; when none are provided they default to ``{}`` (no
+    perturbation).
+
+    Parameters
+    ----------
+    anomaly_lc_params : dict, optional
+        Passed to ``WidePlanetEnsembleInitializer``.  Also inspected by the
+        parent :meth:`AnomalyFitter._compute_sigmas` — but since
+        ``initial_guess`` is ``None`` at construction time, automatic sigma
+        computation is suppressed and ``anomaly_lc_params`` is used only by
+        the initialiser itself.
+    emcee_settings : dict, optional
+        Passed through to :class:`AnomalyFitter`.
+
+    Notes
+    -----
+    ``initial_model`` and ``mag_methods`` are populated lazily as side-effects
+    of the first call to :meth:`make_starting_vector` (triggered by
+    :meth:`~EmceeLCFitter.run` or by accessing either property directly).
+
+    All other parameters are inherited from :class:`AnomalyFitter` and
+    :class:`MulensFitter`.
+
+    See Also
+    --------
+    AnomalyFitter : Parent class providing default parameters and sigma tiers.
+    EmceeLCFitter : Grandparent providing the full emcee run loop.
+    WidePlanetEnsembleInitializer : Builds the starting ensemble.
+    """
+
+    def __init__(self, anomaly_lc_params=None, emcee_settings=None, **kwargs):
+        # Pass initial_guess=None to suppress automatic sigma computation;
+        # initial_guess is built lazily inside make_starting_vector().
+        super().__init__(
+            initial_guess=None,
+            anomaly_lc_params=anomaly_lc_params,
+            emcee_settings=emcee_settings,
+            **kwargs)
+
+        # Sigmas are forwarded to WidePlanetEnsembleInitializer for PSPL
+        # perturbation.  Default to {} (no perturbation) when not provided;
+        # automatic sigma computation was suppressed above because
+        # initial_guess=None.
+        if self.sigmas is None:
+            self.sigmas = {}
+
+        self._initializer = None
+        self._starting_vector = None
+        self._initial_model = None
+        self._mag_methods = None
+
+    # ------------------------------------------------------------------ #
+    # Lazy properties populated by make_starting_vector()                 #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def initial_model(self):
+        """
+        Initial model parameter dict; populated by :meth:`make_starting_vector`.
+
+        Accessing this property before :meth:`make_starting_vector` has been
+        called triggers full ensemble initialisation as a side-effect.
+        """
+        if self._initial_model is None:
+            self.make_starting_vector()
+        return self._initial_model
+
+    @initial_model.setter
+    def initial_model(self, value):
+        self._initial_model = value
+
+    @property
+    def mag_methods(self):
+        """
+        Magnification-methods list; populated by :meth:`make_starting_vector`.
+
+        Accessing this property before :meth:`make_starting_vector` has been
+        called triggers full ensemble initialisation as a side-effect.
+        """
+        if self._mag_methods is None:
+            self.make_starting_vector()
+        return self._mag_methods
+
+    @mag_methods.setter
+    def mag_methods(self, value):
+        self._mag_methods = value
+
+    # ------------------------------------------------------------------ #
+    # Overridden starting ensemble                                         #
+    # ------------------------------------------------------------------ #
+
+    def make_starting_vector(self):
+        """
+        Build the starting ensemble using ``WidePlanetEnsembleInitializer``.
+
+        Runs ``n_walkers`` ``WidePlanetGridSearchEstimators`` with perturbed
+        PSPL parameters, sorts results by chi2, and converts the best
+        ``n_walkers`` rows to emcee parameter vectors.  Sets
+        :attr:`initial_model` and :attr:`mag_methods` as side-effects and
+        initialises the event if not already created.  Subsequent calls
+        return the cached result without re-running the initialiser.
+
+        Returns
+        -------
+        list of list
+            ``n_walkers`` parameter vectors of length ``n_dim``.
+        """
+        if self._starting_vector is not None:
+            return self._starting_vector
+
+        self._initializer = WidePlanetEnsembleInitializer(
+            datasets=self.datasets,
+            anomaly_params=self.anomaly_lc_params,
+            sigmas=self.sigmas,
+            n_estimators=self.emcee_settings['n_walkers'],
+            pspl_chi2=getattr(self, 'pspl_chi2', None),
+        )
+
+        # Store via setters so that the lazy properties resolve on subsequent
+        # accesses without triggering another initialiser run.
+        self.initial_model = self._initializer.initial_model
+        self.mag_methods = self._initializer.mag_methods
+
+        if self._event is None:
+            self.initialize_event()
+
+        df = self._initializer.results.sort_values('chi2')
+        top_rows = df.head(self.emcee_settings['n_walkers'])
+
+        starting_vector = []
+        for _, row in top_rows.iterrows():
+            params = {k: row[k] for k in
+                      ['t_0', 'u_0', 't_E', 's', 'q', 'rho', 'alpha']}
+            vector = self.make_emcee_vector_from_ModelParameters(
+                MulensModel.ModelParameters(params))
+            starting_vector.append(vector)
+
+        self._starting_vector = starting_vector
+        return starting_vector
+
+    # ------------------------------------------------------------------ #
+    # Overridden event initialisation                                      #
+    # ------------------------------------------------------------------ #
+
+    def initialize_event(self):
+        """
+        Initialise the ``MulensModel.Event`` from :attr:`initial_model` and
+        :attr:`mag_methods`.
+
+        Both are set as side-effects of :meth:`make_starting_vector`.
+        ``default_magnification_method`` is set to
+        ``'point_source_point_lens'`` to cover regions outside the explicitly
+        specified method windows.
+
+        Raises
+        ------
+        AttributeError
+            If :attr:`initial_model` or :attr:`mag_methods` has not been set
+            (i.e. :meth:`make_starting_vector` has not been called yet).
+        """
+        if self._initial_model is None:
+            raise AttributeError(
+                'initial_model is not set. Call make_starting_vector() first.')
+        if self._mag_methods is None:
+            raise AttributeError(
+                'mag_methods is not set. Call make_starting_vector() first.')
+
+        model = self.model_config.build(
+            parameters=self._initial_model,
+            magnification_methods=self._mag_methods,
+            default_magnification_method='point_source_point_lens',
+        )
+        self._event = self.event_config.build(
+            model=model,
+            datasets=self.datasets,
+        )

@@ -26,7 +26,7 @@ from .workflow_step import WorkflowStep
 from .estimate_params import (get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator,
     ClosePlanetGridSearchEstimator, CloseUpperPlanetGridSearchEstimator, CloseLowerPlanetGridSearchEstimator
                               )
-from .fitters import SFitFitter, WidePlanetFitter
+from .fitters import SFitFitter, AnomalyFitter
 from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType, SourceType, ParallaxBranch, LensOrbMotion
 from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
 from .classifier import AnomalyClassifier

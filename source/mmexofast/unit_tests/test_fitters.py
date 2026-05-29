@@ -62,7 +62,7 @@ class TestSFitFitter_2(TestSFitFitter_1):
         self.initial_guess = {'t_0': 4., 'u_0': 0.7, 't_E': 20.}
 
 
-class TestWidePlanetFitter(unittest.TestCase):
+class TestAnomalyFitter(unittest.TestCase):
 
     def setUp(self):
         datafile = os.path.join(DATA_PATH, 'unit_test_data', 'planet4AF.dat')
@@ -87,27 +87,28 @@ class TestWidePlanetFitter(unittest.TestCase):
 #                np.testing.assert_allclose(value, self.true_params[key], rtol=0.01)
 
     def test_datasets(self):
-        fitter = fitters.WidePlanetFitter(
-            datasets=[self.data], anomaly_lc_params=self.anomaly_lc_params)
+        fitter = fitters.AnomalyFitter(
+            datasets=[self.data], initial_guess=self.true_params, anomaly_lc_params=self.anomaly_lc_params,
+            mag_methods=[])
         assert fitter.datasets[0] == self.data
         assert fitter.datasets[0].n_epochs == 1600
 
     def test_mag_methods_error(self):
-        with self.assertRaises(AttributeError):
-            test_fitter = fitters.WidePlanetFitter(
-                datasets=[self.data], initial_model_params=self.true_params)
+        with self.assertRaises(ValueError):
+            test_fitter = fitters.AnomalyFitter(
+                datasets=[self.data], initial_guess=self.true_params)
             test_fitter.initialize_event()
 
     def test_event_creation(self):
-        test_fitter = fitters.WidePlanetFitter(
-            datasets=[self.data], initial_model_params=self.true_params,
+        test_fitter = fitters.AnomalyFitter(
+            datasets=[self.data], initial_guess=self.true_params,
             mag_methods=[
                 self.anomaly_lc_params['t_pl'] - 10. * self.anomaly_lc_params['dt'],
                 'VBBL',
                 self.anomaly_lc_params['t_pl'] + 10. * self.anomaly_lc_params['dt']])
 
         assert test_fitter._event is None
-        assert isinstance(test_fitter.initial_model_params, dict)
+        assert isinstance(test_fitter.initial_guess, dict)
 
         assert len(test_fitter.parameters_to_fit) == 7
         test_fitter.initialize_event()
@@ -116,7 +117,7 @@ class TestWidePlanetFitter(unittest.TestCase):
 
     @pytest.mark.slow
     def test_event_update(self):
-        fitter = fitters.WidePlanetFitter(datasets=[self.data], anomaly_lc_params=self.anomaly_lc_params)
+        fitter = fitters.AnomalyFitter(datasets=[self.data], initial_guess=self.true_params, anomaly_lc_params=self.anomaly_lc_params)
         theta = 9 + np.arange(len(fitter.parameters_to_fit), dtype=int)
         #print(dict(zip(fitter.parameters_to_fit, theta)))
         with self.assertRaises(AttributeError):

@@ -14,7 +14,7 @@ import warnings
 
 import MulensModel
 import sfit_minimizer
-from .fitters import SFitFitter, WidePlanetFitter
+from .fitters import SFitFitter, AnomalyFitter
 
 # TODO: Separate EventFinder & AnomalyFinder grid searches from Rectangular grid searches.
 
@@ -3240,8 +3240,8 @@ class BinaryGridSearch(BaseRectGridSearch):
 
         # Run fitter
         try:
-            fitter = WidePlanetFitter(
-                initial_model_params=model_params,
+            fitter = AnomalyFitter(
+                initial_guess=model_params,
                 datasets=self.datasets,
                 **self.fitter_kwargs
             )
