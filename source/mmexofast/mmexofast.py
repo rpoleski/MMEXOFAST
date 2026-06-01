@@ -1894,6 +1894,12 @@ class MMEXOFASTFitter:
                     fixed=False,
                 )
             )
+            if (self._output_config is not None) and self._output_config.save_plots:
+                self._plot_event(
+                    anomaly_fitter.get_event(),
+                    suptitle=f'{key}: {anomaly_fitter.best["chi2"]:.1f}\n{anomaly_fitter.get_event().model.parameters}')
+                path = self._output_config.plot_path(f'_{key}')
+                plt.savefig(path)
 
         #raise NotImplementedError('fit_binary_models needs to be updated to work with multiple est_binary_params')
         #t_E = self.intermediate_results.est_binary_params['t_E']
@@ -1934,6 +1940,7 @@ class MMEXOFASTFitter:
         #        fixed=False,
         #    )
         #)
+
         return None
 
     def check_needs_renorm(self) -> Optional[list[WorkflowStep]]:
