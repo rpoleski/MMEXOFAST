@@ -1841,6 +1841,9 @@ class MMEXOFASTFitter:
             additional steps are required.
         """
         best_pspl = self.select_best_point_lens_model()
+        pspl_chi2 = best_pspl.chi2()
+        n_data = np.sum(np.sum(dataset.good) for dataset in self.datasets)
+        logger.info(f'PL chi2: {pspl_chi2:.1f}, N_good: {n_data}')
 
         for key, params in self.intermediate_results.est_binary_params.items():
             model = self.model_config.build(
@@ -1852,7 +1855,10 @@ class MMEXOFASTFitter:
                 model=model,
                 datasets=self.datasets,
             )
-            if event.get_chi2() > best_pspl.chi2():
+            binary_chi2 =event.get_chi2()
+            logger.info(f'{key} chi2: {binary_chi2:.1f}')
+            if (pspl_chi2 - binary_chi2) * n_data / np.min((binary_chi2, pspl_chi2)) < 3.:
+                logger.info(f'Binary model does not improve chi2 enough, skipping.')
                 continue
 
             # Do the fit
