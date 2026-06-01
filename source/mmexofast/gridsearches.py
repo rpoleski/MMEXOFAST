@@ -136,10 +136,11 @@ class EventFinderGridSearch():
         if self.results is None:
             raise ValueError("Must run grid search before plotting. Call .run() first.")
 
-        if len(self.results) == 0:
-            msg = 'No results to plot.'
-            print(msg)
-            return msg
+        #if len(self.results) == 0:
+        #    msg = 'No results to plot.'
+        #    print(msg)
+        #    return msg
+        print(self.results)
 
         if fig is None:
             fig = plt.figure(figsize=(8, 4))
@@ -574,6 +575,7 @@ class AnomalyFinderGridSearch(EventFinderGridSearch):
     @property
     def best(self):
         if (self.results is not None) and (self._best is None):
+            print(self.anomalies)
             index = np.nanargmax(self.anomalies[:, 5])
             self._best = {'t_0': self.anomalies[index, 0],
                           't_eff': self.anomalies[index, 1],

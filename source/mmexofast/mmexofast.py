@@ -745,6 +745,7 @@ class MMEXOFASTFitter:
             'intermediate_results', IntermediateResults()
         )
         self.renorm_factors: dict = saved_state.get('renorm_factors', {})
+        self.residuals: dict = saved_state.get('residuals', None)
 
     def _get_state(self) -> dict:
         """
@@ -765,6 +766,7 @@ class MMEXOFASTFitter:
             'intermediate_results': self.intermediate_results,
             'renorm_factors': self.renorm_factors,
             'datasets': self.datasets,
+            'residuals': self.residuals
         }
 
     def _load_initial_results(self, initial_results) -> None:
