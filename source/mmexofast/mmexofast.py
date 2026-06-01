@@ -22,7 +22,7 @@ import pandas as pd
 from scipy.special import erfcinv
 
 from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFitResults, EmceeFitResults
-from .workflow_step import WorkflowStep
+from .workflow_step import WorkflowStep, StepStatus
 from .estimate_params import (get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator,
     ClosePlanetGridSearchEstimator, CloseUpperPlanetGridSearchEstimator, CloseLowerPlanetGridSearchEstimator
                               )
@@ -843,14 +843,14 @@ class MMEXOFASTFitter:
         else:
             logger.info(
                 '\nPlanned workflow: \n%s\n', '\n'.join(
-                    ['{0}: {1}'.format(step.stage, step.name) for step in self.planned_steps]))
+                    ['{0}:{1}'.format(step.stage, step.name) for step in self.planned_steps]))
 
         i = 0
         while i < len(self.planned_steps):
             step = self.planned_steps[i]
 
             #debugging:
-            #logger.info(f'\nDEBUG running step: {step.stage}:{step.name}')
+            logger.info(f'\nRunning step: {step.stage}:{step.name}')
             #logger.info(f'DEBUG remaining steps: %s', [f'{s.stage}:{s.name}' for s in self.planned_steps])
 
             if (self.stop_before is not None
@@ -864,6 +864,9 @@ class MMEXOFASTFitter:
                 logger.info('[dry_run] Would execute: %s', step.name)
             else:
                 step.run()
+                if step.status == StepStatus.FAILED:
+                    break
+
                 self.completed_steps.append(step)
 
                 # Insert any dynamically generated follow-up steps
@@ -874,7 +877,6 @@ class MMEXOFASTFitter:
                         self.planned_steps.insert(i + 1 + j, dynamic_step)
 
                 self._save_restart_state()
-                logger.info("")
 
             # Lookahead uses the queue *after* any dynamic insertions
             remaining = self.planned_steps[i + 1:]
@@ -883,7 +885,7 @@ class MMEXOFASTFitter:
                         self.stop_after, step, mode='after',
                         remaining_steps=remaining
                     )):
-                logger.info("Stopping after step '%s'.", step.name)
+                logger.info("\nStopping after step '%s'.", step.name)
                 break
 
             i += 1
@@ -894,13 +896,13 @@ class MMEXOFASTFitter:
                     table_str = self.make_ulens_table(table_type=fmt)
                     path = self._output_config.table_path(fmt)
                     path.write_text(table_str)
-                    logger.info('Saved %s results table to %s.', fmt, path)
+                    logger.info('\nSaved %s results table to %s.', fmt, path)
 
             if self._output_config.save_exozippy_init:
                 path = self._output_config.exozippy_init_path()
                 with open(path, 'w') as f:
                     json.dump(self.initialize_exozippy(), f)
-                logger.info('Saved EXOZIPPy init data to %s.', path)
+                logger.info('\nSaved EXOZIPPy init data to %s.', path)
 
             if self._output_config.save_plots:
                 self._plot_best_fit_event()
@@ -1296,6 +1298,10 @@ class MMEXOFASTFitter:
         if (self._output_config is not None
                 and self._output_config.save_plots):
             fig = ef_grid.plot()
+            if isinstance(fig, str):
+                logger.warning(fig)
+                return
+
             fig.savefig(self._output_config.plot_path('ef_grid'))
             plt.close(fig)
             logger.info(
@@ -1739,6 +1745,10 @@ class MMEXOFASTFitter:
         if (self._output_config is not None
                 and self._output_config.save_plots):
             fig = af_grid.plot()
+            if isinstance(fig, str):
+                logger.warning(fig)
+                return
+
             fig.savefig(self._output_config.plot_path('af_grid'))
             plt.close(fig)
             logger.info(
@@ -1748,7 +1758,6 @@ class MMEXOFASTFitter:
 
         logger.info('Best AF grid point: %s', af_grid.best)
         self.intermediate_results.best_af_grid_point = af_grid.best
-
 
     def get_anomaly_lc_params(self):
         """

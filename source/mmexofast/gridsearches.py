@@ -136,6 +136,11 @@ class EventFinderGridSearch():
         if self.results is None:
             raise ValueError("Must run grid search before plotting. Call .run() first.")
 
+        if len(self.results) == 0:
+            msg = 'No results to plot.'
+            print(msg)
+            return msg
+
         if fig is None:
             fig = plt.figure(figsize=(8, 4))
 
