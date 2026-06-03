@@ -262,7 +262,7 @@ class WidePlanetParameterEstimator(ParameterEstimator):
         return rho
 
     def calc_binary_ulens_params(self):
-        new_params = {'t_0': self.t_0, 'u_0':self.u_0, 't_E': self.t_E, 's': self.s, 'alpha': self.alpha}
+        new_params = {'t_0': self.t_0, 'u_0': self.u_0, 't_E': self.t_E, 's': self.s, 'alpha': self.alpha}
         rho = self.rho
         if rho is not None:
             new_params['rho'] = rho
@@ -1102,7 +1102,7 @@ class CloseUpperPlanetParameterEstimator(WidePlanetParameterEstimator):
 
         return new_params
 
-    def calc_binary_params(self):
+    def calc_binary_ulens_params(self):
         new_params = self.setup_close_ulens_params()
         new_params['alpha'] = self.alpha
 
@@ -1114,6 +1114,10 @@ class CloseUpperPlanetParameterEstimator(WidePlanetParameterEstimator):
         binary_params.set_mag_method(self.params)
 
         return binary_params
+
+    @property
+    def log_q_grid(self):
+        return self.log_q_values if self.log_q_values is not None else np.array([-2.5, -2, -1, -0.5])
 
     @property
     def binary_params(self):

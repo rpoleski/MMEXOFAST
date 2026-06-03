@@ -142,8 +142,9 @@ if __name__ == '__main__':
     answers = DC18Answers()
     event_info = pd.DataFrame(event_info, index=event_info['num'])
     answers.data = answers.data.merge(event_info)
+    index = (answers.data['s'] < 0.5) & (answers.data['u0'].abs() > 0.1) & (answers.data['q'] > 0.001)
     with pd.option_context('display.width', None, 'display.max_rows', None):
-        print(answers.data[answers.print_columns].iloc[np.array([139, 193, 217, 250, 289])-1])
+        print(answers.data[answers.print_columns][index]) #.iloc[np.array([139, 193, 217, 250, 289])-1])
 
     #answers.print_wide_orbit_planets()
     #print(answers.data.columns)
