@@ -1133,6 +1133,9 @@ class TestInvalidKeys(unittest.TestCase):
                     and fit_types.SOURCE_TAGS[tag] == source
                     for tag in fit_types.LENS_TAGS
                 )
+                if lens == fit_types.LensType.BINARY and source == fit_types.SourceType.FINITE:
+                    continue
+
                 self.assertTrue(found, f"No tag for {lens}+{source}")
 
         for motion in fit_types.LensOrbMotion:

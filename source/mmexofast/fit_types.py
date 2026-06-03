@@ -346,6 +346,10 @@ def model_key_to_label(key: FitKey) -> str:
             base = candidate
             break
 
+    if base is None:
+        if key.binary_model_type is not None:
+            base = '2L1S ' + key.binary_model_type
+
     assert base is not None, f"No base label mapping for FitKey {key!r}"
 
     # Optional binary_model_type token placed immediately after the base.
