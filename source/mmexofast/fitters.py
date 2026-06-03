@@ -623,7 +623,7 @@ class EmceeLCFitter(MulensFitter):
                 if param == emcee_param:
                     value = self.initial_guess[param]
                 else:
-                    value = 10.**self.initial_guess[param]
+                    value = np.log10(self.initial_guess[param])
 
                 sigma = (self.sigmas or {}).get(emcee_param)
 
