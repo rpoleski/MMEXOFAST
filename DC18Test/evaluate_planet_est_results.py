@@ -501,9 +501,10 @@ def check_bad_t0(evaluator):
 
 
 if __name__ == '__main__':
+    truth = ['lc_num', 'u0_true', 'tE_true', 's_true', 'q_true', 'rhos_true']
     evaluator = EvaluateResults(strategy=SelectionStrategy.BEST_S)
     with pd.option_context('display.width', None, 'display.max_rows', None):
-        print(evaluator.results[evaluator.print_columns].sort_values(by='lc_num'))
+        print(evaluator.results[truth].sort_values(by='lc_num'))
     #check_bad_t0(evaluator)
 
     #evaluator.is_there_a_good_guess()
@@ -514,7 +515,7 @@ if __name__ == '__main__':
     #evaluator.make_all_scatter_plots()
     #evaluator.make_all_delta_plots()
 
-    evaluator.make_planet_plots()
+    #evaluator.make_planet_plots()
     plt.show()
 
     # Switch strategies at any time without re-parsing:
