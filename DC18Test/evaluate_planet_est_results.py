@@ -103,6 +103,7 @@ def get_results() -> pd.DataFrame:
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = False
+                params['is_inverse']    = False
                 params['t_0']          -= 2458234.
                 lc_params.append(params)
                 continue
@@ -114,6 +115,7 @@ def get_results() -> pd.DataFrame:
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = False
+                params['is_inverse']    = False
                 params['t_0']          -= 2458234.
                 lc_params.append(params)
                 continue
@@ -124,6 +126,25 @@ def get_results() -> pd.DataFrame:
                 params['idx']           = lc_num - 1
                 params['solution_type'] = current_solution_type
                 params['is_alternate']  = True
+                params['is_inverse']    = False
+                params['t_0']          -= 2458234.
+                lc_params.append(params)
+
+            if line.startswith("Alternate 1/s solution:") and current_solution_type is not None:
+                params = _parse_log_dict(line.split(": ", 1)[1])
+                params['idx']           = lc_num - 1
+                params['solution_type'] = current_solution_type
+                params['is_alternate']  = False
+                params['is_inverse']    = True
+                params['t_0']          -= 2458234.
+                lc_params.append(params)
+
+            if line.startswith("Alternate 1/s solution 2:") and current_solution_type is not None:
+                params = _parse_log_dict(line.split(": ", 1)[1])
+                params['idx']           = lc_num - 1
+                params['solution_type'] = current_solution_type
+                params['is_alternate']  = True
+                params['is_inverse']    = True
                 params['t_0']          -= 2458234.
                 lc_params.append(params)
 
@@ -334,6 +355,19 @@ class EvaluateResults():
               f'{good.sum()} rows, {self.results[good]["idx"].nunique()} unique LCs')
         self.print_indices(good)
 
+    def is_sign_s_good(self):
+        self.results['sign_s_good'] = np.log10(self.results['s']) * np.log10(self.results['s_true']) > 0.
+        self.results['s_neg'] = 1. / self.results['s']
+        good = (self.results['s_true'] > 1.) & (self.results['solution_type'].str.match('ClosePlanet'))
+        print(np.sum(good))
+        with pd.option_context('display.max_rows', None, 'display.width', None):
+            print(self.results[
+                      ['lc_num', 'solution_type', 'is_alternate', 'is_inverse', 's_true', 's', 'sign_s_good', 'u0_true', 'tE_true']].sort_values(
+                by=['s_true', 'lc_num', 'solution_type', 'is_alternate']))
+            print(self.results[good][
+                      ['lc_num', 'solution_type', 'is_alternate', 'is_inverse', 's_true', 's', 's_neg', 'sign_s_good', 'u0_true', 'tE_true']].sort_values(
+                by=['lc_num']))
+
     def is_the_planet_good(self, log_q_threshold=0.5):
         delta = np.log10(self.results['q']) - np.log10(self.results['q_true'])
         good  = (
@@ -443,16 +477,17 @@ def check_bad_t0(evaluator):
 
 
 if __name__ == '__main__':
-    evaluator = EvaluateResults(strategy=SelectionStrategy.ALL_PRIMARY)
+    evaluator = EvaluateResults(strategy=SelectionStrategy.ALL)
     check_bad_t0(evaluator)
 
     evaluator.is_the_pspl_fit_good()
     evaluator.is_log_q_good()
+    evaluator.is_sign_s_good()
     evaluator.is_the_planet_good()
     #evaluator.make_all_scatter_plots()
     #evaluator.make_all_delta_plots()
 
-    evaluator.make_planet_plots()
+    #evaluator.make_planet_plots()
     plt.show()
 
     # Switch strategies at any time without re-parsing:

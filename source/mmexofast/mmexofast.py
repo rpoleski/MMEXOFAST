@@ -25,7 +25,7 @@ from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFit
 from .workflow_step import WorkflowStep, StepStatus
 from .estimate_params import (get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator,
                               ClosePlanetGridSearchEstimator, CloseUpperBinaryGridSearchEstimator, CloseLowerBinaryGridSearchEstimator
-                              )
+                            )
 from .fitters import SFitFitter, AnomalyFitter
 from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType, SourceType, ParallaxBranch, LensOrbMotion
 from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
@@ -1806,6 +1806,7 @@ class MMEXOFASTFitter:
 
         if estimator_classes is not None:
             for estimator_class in estimator_classes:
+                s_dagger = None
                 estimator = estimator_class(
                     datasets=self.datasets,
                     params=self.intermediate_results.anomaly_lc_params,
@@ -1827,6 +1828,18 @@ class MMEXOFASTFitter:
                     s_dagger = estimator.alternate_params
                     logger.info('Alternate s_dagger solution: %s', s_dagger.ulens)
                     est_params[class_name + '_alt'] = s_dagger
+
+                if self.intermediate_results.anomaly_lc_params['u_0'] < 0.05:
+                    s_inv = estimator.get_binary_lens_params()
+                    s_inv.ulens['s'] = 1. / s_inv.ulens['s']
+                    logger.info('Alternate 1/s solution: %s', s_inv.ulens)
+                    est_params[class_name + '_inv'] = s_inv
+
+                    if s_dagger is not None:
+                        s_inv_alt = estimator.get_binary_lens_params()
+                        s_inv_alt.ulens['s'] = 1. / s_dagger.ulens['s']
+                        logger.info('Alternate 1/s solution 2: %s', s_inv_alt.ulens)
+                        est_params[class_name + '_alt_inv'] = s_inv_alt
 
                 self.mag_methods = params.mag_methods
 

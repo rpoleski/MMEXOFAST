@@ -66,7 +66,7 @@ slow_parallax = [124, 128, 217] # 66 is broke
 dip_anom = [47, 74, 95, 103]
 bad_t0 = [12, 40, 81, 107, 208, 217, 227]
 
-#lc_nums = [8]
+lc_nums = [12, 47, 66, 78, 103, 139, 199, 223, 253]
 for lc_num in np.sort(lc_nums):
     print('\n...Fitting light curve {0}...'.format(lc_num))
     try:
