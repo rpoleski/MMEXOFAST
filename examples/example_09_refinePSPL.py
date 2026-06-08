@@ -6,6 +6,9 @@ import exozippy as mmexo
 import MulensModel
 import matplotlib.pyplot as plt
 
+
+raise NotImplementedError('Prior implementation. I do not think refinement is actually necessary.')
+
 pspl_params = {
     't_0': 2460023.2579352586, 't_E': 7.39674573, 'u_0': 1.4295525500937951}
 af_grid_params = {'t_0': 2460017.625, 't_eff': 0.75, 'j': 2.0,
