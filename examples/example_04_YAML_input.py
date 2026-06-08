@@ -10,6 +10,9 @@ import mmexofast as mmexo
 from print_ex_metrics import print_metrics
 
 
+raise NotImplementedError('priors and physical parameters not implemented for MMEXOFAST. This is an EXOZIPPy holdover.')
+
+
 def divide_settings(settings):
     """
     divide settings into expected, files, and all others

@@ -12,9 +12,11 @@ import mmexofast as mmexo
 
 from print_ex_metrics import print_metrics
 
+raise NotImplementedError('priors and physical parameters not implemented for MMEXOFAST. This is an EXOZIPPy holdover.')
+
 # Read in the data file
 SAMPLE_FILE_01 = os.path.join(
-    mmexo.MULENS_DATA_PATH, "OB08092",
+    mmexo.config.DATA_PATH, "OB08092",
     "n20100309.I.OGLE4.ob08092.dat")
 
 coords = "17:47:29.42, -34:43:35.6"

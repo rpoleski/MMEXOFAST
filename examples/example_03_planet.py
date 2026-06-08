@@ -15,9 +15,12 @@ import mmexofast as mmexo
 
 from print_ex_metrics import print_metrics
 
+raise NotImplementedError('priors and physical parameters not implemented for MMEXOFAST. This is an EXOZIPPy holdover.')
+
+
 # REWRITE INPUTS USING YAML BECAUSE IT NEEDS TO CAPTURE BAND INFORMATION!
 # Data files
-dir_ = os.path.join(mmexo.MULENS_DATA_PATH, "OB05390")
+dir_ = os.path.join(mmexo.config.DATA_PATH, "OB05390")
 file_1 = os.path.join(dir_, "n20050215.I.OGLE3.dat")
 file_2 = os.path.join(dir_, "n20050724.R.MOA.dat")
 file_3 = os.path.join(dir_, "n20050725.I.Canopus.dat")

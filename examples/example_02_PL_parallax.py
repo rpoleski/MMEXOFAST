@@ -12,10 +12,12 @@ import mmexofast as mmexo
 from print_ex_metrics import print_metrics
 
 
+raise NotImplementedError('priors and physical parameters not implemented for MMEXOFAST. This is an EXOZIPPy holdover.')
+
 # Read the data (note that we do not rescale errorbars here):
 # File Formatting convention: nYYYYMMDD.filtername.telescope.whateveryouwant.
 # YYYYMMDD = UT date of first datapoint
-dir_ = os.path.join(mmexo.MULENS_DATA_PATH, "OB140939")
+dir_ = os.path.join(mmexo.config.DATA_PATH, "OB140939")
 file_ground = os.path.join(dir_, "n20140210.I.OGLE4.ob140939.dat")
 file_spitzer = os.path.join(dir_, "n20140605.Spit36.Spitzer.ob140939.dat")
 
