@@ -71,7 +71,43 @@ class TestCOMag2COMass(unittest.TestCase):
         pass
 
     def test_close_case(self):
-        self.skipTest("test_close_case not implemented, probably has some weird offset due to mmv2 --> v3")
+        params = {'t_0': 0., 'u_0': 0.02, 't_E': 1., 's': 0.7, 'q': 0.1, 'alpha': 30.}
+        new_params = com_trans.co_magnif_to_co_mass(params)
+        assert new_params['t_0'] == params['t_0']
+        assert new_params['u_0'] == params['u_0']
+
+    def do_wide_test(self, alpha):
+        co_magnif_params = {'t_0': 0., 'u_0': 0.02, 't_E': 1., 's': 20., 'q': 0.01, 'alpha': alpha}
+        new_coords = com_trans.co_magnif_to_co_mass(co_magnif_params)
+        co_mass_params = {**co_magnif_params, **new_coords}
+
+        pspl = MulensModel.Model({'t_0': co_magnif_params['t_0'], 'u_0': co_magnif_params['u_0'], 't_E': co_magnif_params['t_E']})
+        planet = MulensModel.Model(parameters=co_mass_params)
+
+        numpy.testing.assert_allclose(
+            pspl.get_magnification(co_magnif_params['t_0']),
+            planet.get_magnification(co_magnif_params['t_0']), rtol=0.01)
+
+    def test_wide_case_1(self):
+        self.do_wide_test(0.)
+
+    def test_wide_case_2(self):
+        self.do_wide_test(90.)
+
+    def test_wide_case_3(self):
+        self.do_wide_test(180.)
+
+    def test_wide_case_4(self):
+        self.do_wide_test(270.)
+
+    def test_wide_case_5(self):
+        self.do_wide_test(-90.)
+
+    def test_wide_case_6(self):
+        self.do_wide_test(-180.)
+
+    def test_wide_case_7(self):
+        self.do_wide_test(-270.)
 
 
 class TestPrimary2COMass(unittest.TestCase):
