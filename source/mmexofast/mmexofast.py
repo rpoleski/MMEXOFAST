@@ -1881,7 +1881,7 @@ class MMEXOFASTFitter:
                 model_config=self.model_config,
                 event_config=self.event_config
             )
-            logger.info(f'sigmas: {anomaly_fitter.sigmas}')
+            logger.debug(f'initial sigmas: {anomaly_fitter.sigmas}')
             msg = anomaly_fitter.run()
             if msg is not None:
                 logger.warning(msg)
@@ -1889,6 +1889,7 @@ class MMEXOFASTFitter:
 
             results = EmceeFitResults(anomaly_fitter)
             logger.info(f'Fitted params ({key}): {results.best}')
+            logger.info(f'       sigmas ({key}): {results.get_sigmas_from_results()}')
 
             # Save the results to all results
             fit_key = FitKey(
