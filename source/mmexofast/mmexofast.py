@@ -1853,7 +1853,7 @@ class MMEXOFASTFitter:
         """
         best_pspl = self.select_best_point_lens_model()
         pspl_chi2 = best_pspl.chi2()
-        n_data = np.sum(np.sum(dataset.good) for dataset in self.datasets)
+        n_data = sum(np.sum(dataset.good) for dataset in self.datasets)
         logger.info(f'PL chi2: {pspl_chi2:.1f}, N_good: {n_data}')
 
         for key, params in self.intermediate_results.est_binary_params.items():
