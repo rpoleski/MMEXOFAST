@@ -904,7 +904,7 @@ class MMEXOFASTFitter:
             if self._output_config.save_exozippy_init:
                 path = self._output_config.exozippy_init_path()
                 with open(path, 'w') as f:
-                    json.dump(self.initialize_exozippy(), f)
+                    json.dump(self.initialize_exozippy(), f, indent=4)
                 logger.info('\nSaved EXOZIPPy init data to %s.', path)
 
             if self._output_config.save_plots:
