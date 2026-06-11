@@ -3,3 +3,5 @@
 /DC18Test/00Notes.txt
 /source/mmexofast/.coverage
 /source/htmlcov/
+__pycache__
+*egg-info*
