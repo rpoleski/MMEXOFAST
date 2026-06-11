@@ -18,7 +18,7 @@ estimation, and ensemble initialization for MCMC sampling.
 from itertools import product
 import pandas as pd
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, brentq
 from scipy.signal import find_peaks
 import scipy.stats
 from matplotlib.gridspec import GridSpec
@@ -81,15 +81,33 @@ class BinaryLensParams():
     Attributes
     ----------
     ulens : dict
-        Binary lens parameter dictionary.
+        Binary lens parameter dictionary suitable for passing to
+        ``MulensModel.Model``.
     mag_methods : list or None
         Magnification methods in MulensModel convention. Set by
-        set_mag_method().
+        :meth:`set_mag_method` and optionally refined by
+        :meth:`refine_mag_methods`.
+    params : dict or None
+        Anomaly light curve parameters. Stored by :meth:`set_mag_method`
+        for use by :meth:`refine_mag_methods`.
     """
+
+    # Index map for mag_methods list:
+    # [t_start, 'point_source', t1, 'hexadecapole', t2, 'VBBL',
+    #  t3, 'hexadecapole', t4, 'point_source', t_end]
+    #    0           1       2        3          4     5
+    #    6       7           8       9           10
+    _T_START_IDX = 0
+    _T_HEXA_LEFT_IDX = 2
+    _T_VBBL_LEFT_IDX = 4
+    _T_VBBL_RIGHT_IDX = 6
+    _T_HEXA_RIGHT_IDX = 8
+    _T_END_IDX = 10
 
     def __init__(self, ulens):
         self.ulens = ulens
         self.mag_methods = None
+        self.params = None
 
     def set_mag_method(self, params):
         """
@@ -97,7 +115,8 @@ class BinaryLensParams():
 
         Sets up a sequence of magnification methods transitioning from
         point_source to hexadecapole to VBBL and back, centered on the
-        anomaly time.
+        anomaly time. Also stores ``params`` as ``self.params`` for use
+        by :meth:`refine_mag_methods`.
 
         Parameters
         ----------
@@ -117,6 +136,7 @@ class BinaryLensParams():
         -------
         None
         """
+        self.params = params
         t_E = params['t_E']
         t_0 = params['t_0']
         t_pl = params['t_pl']
@@ -133,6 +153,281 @@ class BinaryLensParams():
             t_pl + 10. * t_star,
             'point_source',
             np.max((t_0 + t_E, t_pl + t_E / 2., t_pl + 20. * t_star))]
+
+    @staticmethod
+    def _mag_threshold(mag_precise, base=0.0001):
+        """
+        Return the acceptable absolute difference in magnification between
+        two methods.
+
+        For low magnification (A < 3), applies a relative threshold to
+        avoid over-constraining the boundary in regions where the absolute
+        difference between methods is naturally small. For high
+        magnification (A >= 3), applies a fixed absolute threshold since
+        relative differences can become unphysically tight near caustics.
+
+        Parameters
+        ----------
+        mag_precise : float
+            Magnification from the more precise model at the evaluation
+            point. Used to determine which regime applies and to scale the
+            relative threshold.
+        base : float, optional
+            Base precision level. Controls both the relative precision
+            (as a fraction) for A < 3 and the absolute threshold for
+            A >= 3. Default 0.01 (i.e. 1%).
+
+        Returns
+        -------
+        float
+            Absolute threshold on ``|mag_precise - mag_approx|``.
+        """
+        if mag_precise >= 3.0:
+            return base                  # absolute
+        else:
+            return base * mag_precise    # relative
+
+    def _make_model(self, default_method):
+        """
+        Build a ``MulensModel.Model`` from ``self.ulens`` with a fixed
+        default magnification method.
+
+        Parameters
+        ----------
+        default_method : str
+            One of ``'VBBL'``, ``'hexadecapole'``, or ``'point_source'``.
+
+        Returns
+        -------
+        MulensModel.Model
+        """
+        model = MulensModel.Model(self.ulens)
+        model.default_magnification_method = default_method
+        return model
+
+    def _find_method_boundary(self, idx, model_precise, model_approx,
+                               base=0.0001, xtol=0.01):
+        """
+        Find the refined boundary time at ``self.mag_methods[idx]``.
+
+        Checks whether ``model_precise`` and ``model_approx`` agree to
+        within the magnification-dependent threshold (see
+        :meth:`_mag_threshold`) at the current boundary. If they already
+        agree, the boundary is returned unchanged. Otherwise, uses
+        exponential search to find an outer bracket where the methods
+        agree, then ``scipy.optimize.brentq`` to locate the transition
+        precisely.
+
+        The search direction is determined by the sign of
+        ``mag_methods[idx] - t_pl``: left boundaries search further left,
+        right boundaries search further right. The hard limits are
+        ``mag_methods[_T_START_IDX]`` and ``mag_methods[_T_END_IDX]``.
+
+        Parameters
+        ----------
+        idx : int
+            Index into ``self.mag_methods`` of the boundary time to
+            refine. Must be one of the numeric (time) entries, i.e. one
+            of ``_T_HEXA_LEFT_IDX``, ``_T_VBBL_LEFT_IDX``,
+            ``_T_VBBL_RIGHT_IDX``, or ``_T_HEXA_RIGHT_IDX``.
+        model_precise : MulensModel.Model
+            The more precise magnification method model (e.g. VBBL).
+        model_approx : MulensModel.Model
+            The less precise magnification method model (e.g.
+            hexadecapole).
+        base : float, optional
+            Base precision level passed to :meth:`_mag_threshold`.
+            Default 0.01.
+        xtol : float, optional
+            Time precision in days passed to ``brentq``. Default 0.01.
+
+        Returns
+        -------
+        float
+            Refined boundary time. Equal to the original
+            ``mag_methods[idx]`` if the methods already agree there, or
+            the appropriate hard limit if the exponential search reaches
+            it without finding agreement.
+
+        Warns
+        -----
+        UserWarning
+            If the exponential search reaches the hard limit before
+            finding a bracket where the methods agree.
+        """
+        t_start = self.mag_methods[idx]
+        t_pl = self.params['t_pl']
+        direction = np.sign(t_start - t_pl)
+
+        t_limit = (self.mag_methods[self._T_START_IDX] if direction < 0
+                   else self.mag_methods[self._T_END_IDX])
+
+        _cache = {}
+
+        def mag_diff(t):
+            if t not in _cache:
+                mag_p = float(model_precise.get_magnification(t))
+                mag_a = float(model_approx.get_magnification(t))
+                threshold = self._mag_threshold(mag_p, base=base)
+                _cache[t] = abs(mag_p - mag_a) - threshold
+            return _cache[t]
+
+        # Guard: methods already agree at the initial boundary
+        if mag_diff(t_start) <= 0:
+            return float(t_start)
+
+        # Phase 1: exponential search for a bracket where methods agree
+        step = abs(t_start - t_pl)
+        t_outer = t_start
+        while True:
+            t_outer += direction * step
+            if direction * t_outer >= direction * t_limit:
+                warnings.warn(
+                    f"Reached hard limit t={t_limit:.3f} at "
+                    f"mag_methods[{idx}]; methods may still disagree."
+                )
+                return float(t_limit)
+            if mag_diff(t_outer) <= 0:
+                break
+            step *= 2.0
+
+        # Phase 2: brentq to locate the transition precisely
+        return float(brentq(
+            mag_diff,
+            min(t_start, t_outer),
+            max(t_start, t_outer),
+            xtol=xtol))
+
+    def _boundaries_monotonic(self):
+        """
+        Check whether all time values in ``self.mag_methods`` are strictly
+        increasing.
+
+        Returns
+        -------
+        bool
+            True if ``mag_methods[0] < mag_methods[2] < ... < mag_methods[10]``.
+        """
+        times = self.mag_methods[0::2]
+        return all(times[i] < times[i + 1] for i in range(len(times) - 1))
+
+    def _apply_refinement(self, base, xtol, model_vbbl, model_hexa, model_ps):
+        """
+        Run one pass of boundary refinement for all four method transitions.
+
+        Updates ``self.mag_methods`` in place at the four inner boundary
+        indices. Called by :meth:`refine_mag_methods` with different
+        ``base`` values as part of its fallback sequence.
+
+        Parameters
+        ----------
+        base : float
+            Base precision level passed to :meth:`_find_method_boundary`.
+        xtol : float
+            Time precision in days passed to :meth:`_find_method_boundary`.
+        model_vbbl : MulensModel.Model
+            Model with ``default_magnification_method = 'VBBL'``.
+        model_hexa : MulensModel.Model
+            Model with ``default_magnification_method = 'hexadecapole'``.
+        model_ps : MulensModel.Model
+            Model with ``default_magnification_method = 'point_source'``.
+
+        Returns
+        -------
+        None
+        """
+        boundaries = [
+            (self._T_HEXA_LEFT_IDX,  model_hexa, model_ps),
+            (self._T_VBBL_LEFT_IDX,  model_vbbl, model_hexa),
+            (self._T_VBBL_RIGHT_IDX, model_vbbl, model_hexa),
+            (self._T_HEXA_RIGHT_IDX, model_hexa, model_ps),
+        ]
+        for idx, model_precise, model_approx in boundaries:
+            self.mag_methods[idx] = self._find_method_boundary(
+                idx, model_precise, model_approx, base, xtol)
+
+    def refine_mag_methods(self, base=0.0001, xtol=0.01):
+        """
+        Refine the magnification method boundaries using model comparisons.
+
+        For each of the four transition points in ``self.mag_methods``,
+        compares the two adjacent magnification methods at the current
+        boundary using a magnification-dependent threshold (see
+        :meth:`_mag_threshold`). If they differ by more than the threshold,
+        uses exponential search and ``scipy.optimize.brentq`` (via
+        :meth:`_find_method_boundary`) to locate the outermost time at
+        which the methods agree.
+
+        If the refined boundaries are not strictly monotonic (i.e. adjacent
+        method windows have collapsed into each other), refinement is
+        retried with progressively looser thresholds. The sequence of base
+        values tried is ``[base, 0.001, 0.005, 0.01]``, with any values
+        smaller than ``base`` skipped. If no threshold produces monotonic
+        boundaries, refinement is abandoned and the original unrefined
+        boundaries from :meth:`set_mag_method` are restored, and a
+        :class:`UserWarning` is issued.
+
+        The four boundaries refined are, from left to right:
+
+        - ``point_source`` / ``hexadecapole`` (left)
+        - ``hexadecapole`` / ``VBBL`` (left)
+        - ``VBBL`` / ``hexadecapole`` (right)
+        - ``hexadecapole`` / ``point_source`` (right)
+
+        Must be called after :meth:`set_mag_method`.
+
+        Parameters
+        ----------
+        base : float, optional
+            Starting base precision level. The first entry in the fallback
+            sequence; subsequent values are fixed at ``0.001``, ``0.005``,
+            and ``0.01``. Default 0.0001.
+        xtol : float, optional
+            Time precision in days for each refined boundary.
+            Default 0.01.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`set_mag_method` has not been called first.
+        """
+        if self.mag_methods is None or self.params is None:
+            raise RuntimeError(
+                "set_mag_method() must be called before refine_mag_methods().")
+
+        initial_mag_methods = self.mag_methods.copy()
+
+        model_vbbl = self._make_model('VBBL')
+        model_hexa = self._make_model('hexadecapole')
+        model_ps = self._make_model('point_source')
+
+        # Try progressively looser thresholds; skip any tighter than base
+        fallback_sequence = [b for b in [0.0001, 0.001, 0.005, 0.01]
+                             if b >= base]
+
+        for current_base in fallback_sequence:
+            self.mag_methods = initial_mag_methods.copy()
+            self._apply_refinement(
+                current_base, xtol, model_vbbl, model_hexa, model_ps)
+            if self._boundaries_monotonic():
+                return
+            warnings.warn(
+                f"Refined mag_method boundaries are not monotonic with "
+                f"base={current_base:.4f}. "
+                f"Trying next threshold in fallback sequence.",
+                UserWarning)
+
+        # All thresholds exhausted: restore original unrefined boundaries
+        warnings.warn(
+            f"Refined mag_method boundaries are not monotonic for any "
+            f"threshold in {fallback_sequence}. "
+            f"Falling back to unrefined boundaries.",
+            UserWarning)
+        self.mag_methods = initial_mag_methods
 
 
 def get_wide_params(params, limit='GG97'):
@@ -510,6 +805,7 @@ class WidePlanetParameterEstimator(ParameterEstimator):
         binary_ulens_params = self.calc_binary_ulens_params()
         out = BinaryLensParams(binary_ulens_params)
         out.set_mag_method(self.params)
+        out.refine_mag_methods()
         return out
 
     @property
@@ -1670,26 +1966,6 @@ class CloseUpperBinaryParameterEstimator(WidePlanetParameterEstimator):
         new_params['alpha'] = self.alpha
 
         return new_params
-
-    def get_binary_lens_params(self):
-        """
-        Return binary lens parameters for the close upper binary model.
-
-        Calls :meth:`calc_binary_ulens_params` to get the parameter
-        dictionary, wraps it in a :class:`BinaryLensParams` object, and
-        sets the magnification methods via
-        :meth:`BinaryLensParams.set_mag_method`.
-
-        Returns
-        -------
-        :class:`BinaryLensParams`
-            Close binary lens model parameters with magnification methods set.
-        """
-        binary_ulens_params = self.calc_binary_ulens_params()
-        binary_params = BinaryLensParams(binary_ulens_params)
-        binary_params.set_mag_method(self.params)
-
-        return binary_params
 
     @property
     def log_q_grid(self):
