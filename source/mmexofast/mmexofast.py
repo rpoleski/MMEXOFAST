@@ -1491,6 +1491,12 @@ class MMEXOFASTFitter:
         and ``_apply_error_renormalization``.  Rebuilds
         ``fix_blend_flux_map`` and ``fix_source_flux_map`` after
         replacing dataset objects.
+
+        If ``self.intermediate_results.anomaly_lc_params`` is set and
+        contains ``'t_0'`` and ``'t_eff'`` keys, data points whose
+        timestamps fall within the window ``[t_0 - t_eff, t_0 + t_eff]``
+        are **protected from outlier rejection**.  The anomaly signal
+        should not be treated as a systematic and removed.
         """
         reference_fit = self.select_best_point_lens_model()
         reference_model = reference_fit.full_result.fitter.get_model()
@@ -1508,6 +1514,26 @@ class MMEXOFASTFitter:
         sig = inspect.signature(MulensModel.MulensData.__init__)
         new_datasets: list = []
 
+        # ------------------------------------------------------------------
+        # Resolve the anomaly window once, outside the dataset loop.
+        # Points inside [t_pl - dt, t_pl + dt] must never be flagged as
+        # outliers, because they carry the planetary signal that the
+        # reference (point-lens) model cannot describe.
+        # ------------------------------------------------------------------
+        # TODO: Could do weird stuff for long-duration, weak anomalies.
+        anomaly_t_range: Optional[tuple] = None
+        anomaly_lc_params = self.intermediate_results.anomaly_lc_params
+        if anomaly_lc_params is not None:
+            t_pl = anomaly_lc_params.get('t_0')
+            dt = anomaly_lc_params.get('t_eff')
+            if t_pl is not None and dt is not None:
+                anomaly_t_range = (t_pl - dt, t_pl + dt)
+                logger.info(
+                    'Anomaly window protection active: '
+                    't_0=%.6f, t_eff=%.6f  →  [%.6f, %.6f]',
+                    t_pl, dt, anomaly_t_range[0], anomaly_t_range[1],
+                )
+
         for i, dataset in enumerate(self.datasets):
             label = dataset.plot_properties['label']
 
@@ -1517,6 +1543,23 @@ class MMEXOFASTFitter:
 
             n_params = len(reference_model.parameters.as_dict())
             bad_index: Any = -1
+
+            # Build the per-dataset protected mask (time-based, constant
+            # throughout the loop since dataset.time never changes).
+            if anomaly_t_range is not None:
+                protected_mask = (
+                        (dataset.time >= anomaly_t_range[0]) &
+                        (dataset.time <= anomaly_t_range[1])
+                )
+                n_protected = int(np.sum(protected_mask & dataset.good))
+                if n_protected > 0:
+                    logger.info(
+                        '  %s: %d point(s) inside anomaly window are '
+                        'protected from outlier rejection.',
+                        label, n_protected,
+                    )
+            else:
+                protected_mask = np.zeros(len(dataset.time), dtype=bool)
 
             # Iterative outlier removal
             while bad_index is not None:
@@ -1534,11 +1577,16 @@ class MMEXOFASTFitter:
                     phot_fmt='flux', bad=True
                 )
                 sigma = np.abs(res / (err * errfac))
-                if np.any(sigma[dataset.good] > max_sig):
-                    i_worst = np.argmax(sigma[dataset.good])
-                    bad_idx = np.argwhere(
-                        sigma == sigma[dataset.good][i_worst]
-                    )[0]
+
+                # Candidates are good points that are NOT in the anomaly
+                # window.  Protected points may exceed max_sig (because the
+                # point-lens model cannot fit the anomaly), but they must
+                # not be removed.
+                candidate_mask = dataset.good & ~protected_mask
+                if np.any(sigma[candidate_mask] > max_sig):
+                    candidate_indices = np.where(candidate_mask)[0]
+                    i_worst = np.argmax(sigma[candidate_mask])
+                    bad_idx = candidate_indices[[i_worst]]  # shape (1,)
                     new_bad = dataset.bad.copy()
                     new_bad[bad_idx] = True
                     dataset.bad = new_bad
@@ -1565,7 +1613,7 @@ class MMEXOFASTFitter:
                     'self', 'data_list', 'good',
                     'phot_fmt', 'file_name',
                 )
-                and hasattr(dataset, k)
+                   and hasattr(dataset, k)
             }
             new_datasets.append(
                 MulensModel.MulensData(
@@ -1593,7 +1641,7 @@ class MMEXOFASTFitter:
         # Rebuild event_config: renormalization replaced dataset objects,
         # which invalidates the dataset-keyed flux-fixing maps.
         self.event_config = self._build_event_config()
-
+        
     def refit_all(self) -> None:
         """
         Refit all stored fits using updated error normalization.
