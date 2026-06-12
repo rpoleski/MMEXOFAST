@@ -266,8 +266,8 @@ class BinaryLensParams():
 
         def mag_diff(t):
             if t not in _cache:
-                mag_p = float(model_precise.get_magnification(t))
-                mag_a = float(model_approx.get_magnification(t))
+                mag_p = float(model_precise.get_magnification(t)[0])
+                mag_a = float(model_approx.get_magnification(t)[0])
                 threshold = self._mag_threshold(mag_p, base=base)
                 _cache[t] = abs(mag_p - mag_a) - threshold
             return _cache[t]
