@@ -255,8 +255,8 @@ class BinaryLensParams():
             If the exponential search reaches the hard limit before
             finding a bracket where the methods agree.
         """
-        t_start = self.mag_methods[idx]
-        t_pl = self.params['t_pl']
+        t_start = float(self.mag_methods[idx])  # ensure scalars
+        t_pl = float(self.params['t_pl'])
         direction = np.sign(t_start - t_pl)
 
         t_limit = (self.mag_methods[self._T_START_IDX] if direction < 0

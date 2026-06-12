@@ -1521,6 +1521,7 @@ class MMEXOFASTFitter:
         # reference (point-lens) model cannot describe.
         # ------------------------------------------------------------------
         # TODO: Could do weird stuff for long-duration, weak anomalies.
+        # TODO: Doesn't work retroactively if renormalize errors was run on the PSPL fit.
         anomaly_t_range: Optional[tuple] = None
         anomaly_lc_params = self.intermediate_results.anomaly_lc_params
         if anomaly_lc_params is not None:
