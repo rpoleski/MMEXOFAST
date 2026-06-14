@@ -21,12 +21,12 @@ import numpy as np
 import pandas as pd
 from scipy.special import erfcinv
 
-from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFitResults, EmceeFitResults
+from .results import AllFitResults, FitRecord, IntermediateResults, MMEXOFASTFitResults
 from .workflow_step import WorkflowStep, StepStatus
 from .estimate_params import (get_PSPL_params, AnomalyPropertyEstimator, WidePlanetGridSearchEstimator,
                               ClosePlanetGridSearchEstimator, CloseUpperBinaryGridSearchEstimator, CloseLowerBinaryGridSearchEstimator
                             )
-from .fitters import SFitFitter, AnomalyFitter
+from .fitters import SFitFitter, AnomalyFitter, EmceeFitResults
 from .fit_types import label_to_model_key, model_key_to_label, FitKey, LensType, SourceType, ParallaxBranch, LensOrbMotion
 from .gridsearches import EventFinderGridSearch, AnomalyFinderGridSearch, ParallaxGridSearch
 from .classifier import AnomalyClassifier
@@ -1936,7 +1936,7 @@ class MMEXOFASTFitter:
                 logger.warning(msg)
                 continue
 
-            results = EmceeFitResults(anomaly_fitter)
+            results = MMEXOFASTFitResults(anomaly_fitter)
             logger.info(f'Fitted params ({key}): {results.best}')
             logger.info(f'       sigmas ({key}): {results.get_sigmas_from_results()}')
 
@@ -1962,46 +1962,6 @@ class MMEXOFASTFitter:
                     suptitle=f'{key}: {anomaly_fitter.best["chi2"]:.1f}\n{anomaly_fitter.get_event().model.parameters}')
                 path = self._output_config.plot_path(f'_{key}')
                 plt.savefig(path)
-
-        #raise NotImplementedError('fit_binary_models needs to be updated to work with multiple est_binary_params')
-        #t_E = self.intermediate_results.est_binary_params['t_E']
-        #u_0 = self.intermediate_results.est_binary_params['u_0']
-        #max_sigma_u_0 = 0.1
-        #max_sigma_t_E = max_sigma_u_0 * t_E / u_0
-        #sigmas['u_0'] = min(sigmas['u_0'], max_sigma_u_0)
-        #sigmas['t_E'] = min(sigmas['t_E'], max_sigma_t_E)
-        #
-        #wide_planet_fitter = WidePlanetFitter(
-        #    datasets=self.datasets,
-        #    anomaly_lc_params=self.intermediate_results.est_binary_params,
-        #    sigmas=sigmas,
-        #    emcee_settings=self.emcee_settings,
-        #    **self._get_fitter_kwargs(),
-        #)
-        #logger.info(
-        #    'Initial 2L1S Wide Model: %s',
-        #    wide_planet_fitter.initial_model,
-        #)
-        #wide_planet_fitter.run()
-        #
-        #key = FitKey(
-        #    lens_type=LensType.BINARY,
-        #    source_type=(
-        #        SourceType.FINITE
-        #        if self.finite_source
-        #        else SourceType.POINT
-        #    ),
-        #    parallax_branch=ParallaxBranch.NONE,
-        #    lens_orb_motion=LensOrbMotion.NONE,
-        #)
-        #self.all_fit_results.set(
-        #    FitRecord.from_full_result(
-        #        model_key=key,
-        #        full_result=EmceeFitResults(wide_planet_fitter),
-        #        renorm_factors=self.renorm_factors,
-        #        fixed=False,
-        #    )
-        #)
 
         return None
 

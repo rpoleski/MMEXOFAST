@@ -123,43 +123,81 @@ class BaseFitResults(ABC):
 
 class MMEXOFASTFitResults(BaseFitResults):
     """
-    Wrapper for results from an SFit minimizer run.
+    Wrapper for results from either an SFit minimizer or an emcee MCMC run.
 
     Exposes the ``BaseFitResults`` interface so that ``FitRecord`` can
-    consume SFit results identically to emcee results.
+    consume both SFit and emcee results identically.
+
+    The type of fitter is detected automatically via duck typing in
+    ``_is_emcee()``: emcee results expose ``sigma_minus``; sfit results
+    do not.
 
     Assumes ``fitter`` exposes ``.best``, ``.results``,
-    ``.parameters_to_fit``, and ``.datasets``.
+    ``.parameters_to_fit``, and ``.datasets``. For emcee fitters,
+    ``fitter.results`` must be an ``EmceeFitResults`` instance (from
+    ``fitters.py``) set by ``EmceeLCFitter.run()``.
 
     Parameters
     ----------
     fitter : object
-        The fitter object after the fit has completed. Must expose
-        ``best``, ``results``, ``parameters_to_fit``, and ``datasets``.
+        The fitter object after the fit has completed. For sfit, must
+        expose ``best``, ``results``, ``parameters_to_fit``, and
+        ``datasets``. For emcee, must additionally expose
+        ``best_theta``, ``_event``, ``initialize_event()``, and
+        ``get_parameter_name()``.
 
     Notes
     -----
-    Unlike ``EmceeFitResults``, this class produces a single ``'sigmas'``
-    column in ``format_results_as_df()`` since SFit returns symmetric
-    uncertainties.
+    ``format_results_as_df()`` produces different sigma columns depending
+    on the fitter type:
+
+    - sfit: single ``'sigmas'`` column (symmetric uncertainties).
+    - emcee: ``'sigma_minus'`` and ``'sigma_plus'`` columns (asymmetric).
+      Fitted parameter values are p50 (median of post-burn-in chain).
     """
 
     def __init__(self, fitter):
         super().__init__(fitter)
 
+    # -----------------------------------------------------------------------
+    # Detection
+    # -----------------------------------------------------------------------
+
+    def _is_emcee(self) -> bool:
+        """
+        Return True if the fitter's results object is from an emcee run.
+
+        Detected via duck typing: emcee results expose ``sigma_minus``,
+        which sfit results do not. This avoids a cross-module import of
+        ``EmceeFitResults`` from ``fitters.py``.
+
+        Returns
+        -------
+        bool
+        """
+        return hasattr(self.fitter.results, 'sigma_minus')
+
+    # -----------------------------------------------------------------------
+    # BaseFitResults interface
+    # -----------------------------------------------------------------------
 
     def get_params_from_results(self) -> Dict[str, float]:
         """
-        Return a dict with just the best-fit microlensing parameters and values,
-        i.e., something appropriate for using as input to `MulensModel.Model()`.
+        Return a dict with just the best-fit microlensing parameters and
+        values, i.e., something appropriate for using as input to
+        ``MulensModel.Model()``.
         """
         params = {key: value for key, value in self.best.items()}
-        params.pop("chi2", None)
+        params.pop('chi2', None)
         return params
 
     def get_sigmas_from_results(self) -> Dict[str, float]:
         """
         Return a dict mapping parameter name -> 1-sigma uncertainty.
+
+        For both sfit and emcee, reads ``fitter.results.sigmas``. For
+        emcee, this is the symmetric mean of ``sigma_minus`` and
+        ``sigma_plus``, computed inside ``EmceeFitResults``.
         """
         sigmas = {}
         for param, sigma in zip(self.parameters_to_fit, self.results.sigmas):
@@ -169,196 +207,142 @@ class MMEXOFASTFitResults(BaseFitResults):
     def format_results_as_df(self) -> pd.DataFrame:
         """
         Build a summary DataFrame (fitted params, fixed params, flux params).
-        """
-        def get_df_fitted_parameters():
-            parameters = list(self.parameters_to_fit)
-            values = list(self.results.x[0:len(parameters)])
-            sigmas = list(self.results.sigmas[0:len(parameters)])
 
-            df = pd.DataFrame({
-                "parameter_names": parameters,
-                "values": values,
-                "sigmas": sigmas,
-            })
-            return df
+        Branches on whether the fitter used emcee or sfit, detected via
+        ``_is_emcee()``. The two paths produce different sigma columns:
 
-        def get_df_fixed_parameters():
-            fixed_parameters = [
-                p for p in self.all_model_parameters
-                if p not in self.parameters_to_fit
-            ]
-            values = [self.best[param] for param in fixed_parameters]
-            fixed_parameters.append("N_data")
-            values.append(np.sum([np.sum(dataset.good) for dataset in self.datasets]))
-            # TODO: optionally add chi2/N_data per dataset if desired.
-
-            df = pd.DataFrame({
-                "parameter_names": fixed_parameters,
-                "values": values,
-            })
-            return df
-
-        def get_df_flux_parameters():
-            # TODO: decide if you want fluxes/magnitudes for all datasets or subset.
-            parameters: list[str] = []
-            values: list[float] = []
-            sigmas: list[float] = []
-
-            for i, dataset in enumerate(self.datasets):
-                #if "label" in dataset.plot_properties.keys():
-                #    obs = dataset.plot_properties["label"].split("-")[0]
-                #else:
-                #    obs = i
-                #
-                #if dataset.bandpass is not None:
-                #    band = dataset.bandpass
-                #else:
-                #    band = "mag"
-                obs, band = get_telescope_band_from_filename(dataset.plot_properties['label'])
-
-                parameters.append(f"{band}_S_{obs}")
-                parameters.append(f"{band}_B_{obs}")
-
-                obs_index = len(self.parameters_to_fit) + 2 * i
-                for index in range(2):
-                    flux = self.results.x[obs_index + index]
-                    if flux > 0:
-                        err_flux = self.results.sigmas[obs_index + index]
-                        mag, err_mag = MulensModel.utils.Utils.get_mag_and_err_from_flux(
-                            flux, err_flux
-                        )
-                    else:
-                        mag = "neg flux"
-                        err_mag = np.nan
-
-                    values.append(mag)
-                    sigmas.append(err_mag)
-
-            df = pd.DataFrame({
-                "parameter_names": parameters,
-                "values": values,
-                "sigmas": sigmas,
-            })
-            return df
-
-        df_fit = get_df_fitted_parameters()
-        df_fixed = get_df_fixed_parameters()
-        df_ulens = pd.concat((df_fit, df_fixed))
-
-        df_flux = get_df_flux_parameters()
-        df = pd.concat((df_ulens, df_flux), ignore_index=True)
-        return df
-
-    @property
-    def results(self):
-        """object : Full SFit results object from the fitter."""
-        return self.fitter.results
-
-
-class EmceeFitResults(BaseFitResults):
-    """
-    Wrapper for results from a WidePlanetFitter emcee MCMC run.
-
-    Computes post-burn-in percentiles from the sampler chain and exposes
-    them via the ``BaseFitResults`` interface so that ``FitRecord`` can
-    consume emcee results identically to SFit results.
-
-    Parameters
-    ----------
-    fitter : WidePlanetFitter
-        The fitter object after ``run()`` has completed. Must expose
-        ``sampler.chain``, ``sampler.lnprobability``, ``emcee_settings``,
-        ``best``, ``best_theta``, ``parameters_to_fit``, ``datasets``,
-        ``_event``, ``initialize_event()``, and ``get_parameter_name()``.
-
-    Attributes
-    ----------
-    fitter : WidePlanetFitter
-        The wrapped fitter object.
-
-    Notes
-    -----
-    ``sigma_minus = p50 - p16`` and ``sigma_plus = p84 - p50`` are both
-    stored as positive numbers. The minus sign is a display concern only.
-    """
-
-    def __init__(self, fitter):
-        super().__init__(fitter)
-        self._percentiles = None
-
-    # -----------------------------------------------------------------------
-    # Percentiles (lazily computed and cached)
-    # -----------------------------------------------------------------------
-
-    @property
-    def percentiles(self):
-        """
-        np.ndarray, shape (3, n_params) : 16th, 50th, and 84th percentiles
-        of the post-burn-in chain, one column per parameter in
-        ``parameters_to_fit``. Computed once and cached.
-        """
-        if self._percentiles is None:
-            n_burn = self.fitter.emcee_settings['n_burn']
-            n_dim  = self.fitter.emcee_settings['n_dim']
-            samples = self.fitter.sampler.chain[:, n_burn:, :].reshape(
-                (-1, n_dim))
-            self._percentiles = np.percentile(samples, [16, 50, 84], axis=0)
-        return self._percentiles
-
-    # -----------------------------------------------------------------------
-    # BaseFitResults interface
-    # -----------------------------------------------------------------------
-
-    def get_params_from_results(self) -> dict:
-        """
-        Return the max-likelihood parameters in linear space.
-
-        Returns ``self.best`` excluding ``'chi2'``. Keys are linear-space
-        parameter names (e.g. ``'rho'``, not ``'log_rho'``), suitable for
-        use as input to ``MulensModel.Model()``.
+        - sfit: single ``'sigmas'`` column (symmetric).
+        - emcee: ``'sigma_minus'`` and ``'sigma_plus'`` columns (asymmetric).
+          Fitted parameter values are p50 (median of post-burn-in chain).
 
         Returns
         -------
-        dict
-            Linear-space parameter name -> max-likelihood value.
+        pd.DataFrame
         """
-        return {k: v for k, v in self.best.items() if k != 'chi2'}
+        if self._is_emcee():
+            df_fitted = self._get_df_fitted_parameters_emcee()
+            df_fixed  = self._get_df_fixed_parameters_emcee()
+            df_flux   = self._get_df_flux_parameters_emcee()
+        else:
+            df_fitted = self._get_df_fitted_parameters_sfit()
+            df_fixed  = self._get_df_fixed_parameters_sfit()
+            df_flux   = self._get_df_flux_parameters_sfit()
 
-    def get_sigmas_from_results(self) -> dict:
+        df_ulens = pd.concat((df_fitted, df_fixed))
+        return pd.concat((df_ulens, df_flux), ignore_index=True)
+
+    # -----------------------------------------------------------------------
+    # sfit private helpers
+    # -----------------------------------------------------------------------
+
+    def _get_df_fitted_parameters_sfit(self) -> pd.DataFrame:
         """
-        Return mean 1-sigma uncertainties for each fitted parameter.
+        Build the fitted parameters section of the DataFrame for sfit results.
 
-        Computes ``(sigma_minus + sigma_plus) / 2`` per parameter, where
-        ``sigma_minus = p50 - p16`` and ``sigma_plus = p84 - p50``
-        (both positive).
+        Uses ``results.x`` for values and ``results.sigmas`` for symmetric
+        uncertainties.
 
         Returns
         -------
-        dict
-            Parameter name (as in ``parameters_to_fit``) -> mean 1-sigma
-            uncertainty.
+        pd.DataFrame
+            Columns: ``'parameter_names'``, ``'values'``, ``'sigmas'``.
         """
-        p = self.percentiles
-        sigmas = {}
-        for i, param in enumerate(self.parameters_to_fit):
-            sigma_minus = p[1, i] - p[0, i]
-            sigma_plus  = p[2, i] - p[1, i]
-            sigmas[param] = (sigma_minus + sigma_plus) / 2
-        return sigmas
+        parameters = list(self.parameters_to_fit)
+        values     = list(self.results.x[0:len(parameters)])
+        sigmas     = list(self.results.sigmas[0:len(parameters)])
 
-    def format_results_as_df(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            'parameter_names': parameters,
+            'values':          values,
+            'sigmas':          sigmas,
+        })
+
+    def _get_df_fixed_parameters_sfit(self) -> pd.DataFrame:
         """
-        Build a summary DataFrame with fitted, fixed, and flux parameters.
+        Build the fixed parameters and N_data section of the DataFrame
+        for sfit results.
 
-        Sections (in order):
+        Fixed parameters are those present in ``best`` but absent from
+        ``parameters_to_fit``. ``N_data`` (total good data points across
+        all datasets) is appended last.
 
-        1. **Fitted parameters**: 50th percentile values with asymmetric
-           ``sigma_minus`` (p50 - p16, positive) and ``sigma_plus``
-           (p84 - p50, positive).
-        2. **Fixed parameters and chi2**: values from ``best``, NaN sigmas.
-        3. **N_data**: total number of good data points, NaN sigmas.
-        4. **Flux parameters**: source and blend magnitudes at the
-           max-likelihood parameters, NaN sigmas.
+        Returns
+        -------
+        pd.DataFrame
+            Columns: ``'parameter_names'``, ``'values'``.
+        """
+        fixed_parameters = [
+            p for p in self.all_model_parameters
+            if p not in self.parameters_to_fit
+        ]
+        values = [self.best[param] for param in fixed_parameters]
+        fixed_parameters.append('N_data')
+        values.append(
+            np.sum([np.sum(dataset.good) for dataset in self.datasets])
+        )
+
+        return pd.DataFrame({
+            'parameter_names': fixed_parameters,
+            'values':          values,
+        })
+
+    def _get_df_flux_parameters_sfit(self) -> pd.DataFrame:
+        """
+        Build the flux parameters section of the DataFrame for sfit results.
+
+        Reads source and blend fluxes directly from ``results.x`` using
+        the sfit index layout: model parameters occupy the first
+        ``len(parameters_to_fit)`` indices, followed by source and blend
+        flux pairs for each dataset.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: ``'parameter_names'``, ``'values'``, ``'sigmas'``.
+        """
+        parameters = []
+        values     = []
+        sigmas     = []
+
+        for i, dataset in enumerate(self.datasets):
+            obs, band = get_telescope_band_from_filename(
+                dataset.plot_properties['label']
+            )
+            parameters.append(f'{band}_S_{obs}')
+            parameters.append(f'{band}_B_{obs}')
+
+            obs_index = len(self.parameters_to_fit) + 2 * i
+            for index in range(2):
+                flux = self.results.x[obs_index + index]
+                if flux > 0:
+                    err_flux = self.results.sigmas[obs_index + index]
+                    mag, err_mag = MulensModel.utils.Utils.get_mag_and_err_from_flux(
+                        flux, err_flux
+                    )
+                else:
+                    mag     = 'neg flux'
+                    err_mag = np.nan
+
+                values.append(mag)
+                sigmas.append(err_mag)
+
+        return pd.DataFrame({
+            'parameter_names': parameters,
+            'values':          values,
+            'sigmas':          sigmas,
+        })
+
+    # -----------------------------------------------------------------------
+    # emcee private helpers
+    # -----------------------------------------------------------------------
+
+    def _get_df_fitted_parameters_emcee(self) -> pd.DataFrame:
+        """
+        Build the fitted parameters section of the DataFrame for emcee results.
+
+        Uses p50 (median of post-burn-in chain) as values. ``sigma_minus``
+        and ``sigma_plus`` are read from ``fitter.results`` and are both
+        stored as positive numbers.
 
         Returns
         -------
@@ -366,38 +350,29 @@ class EmceeFitResults(BaseFitResults):
             Columns: ``'parameter_names'``, ``'values'``,
             ``'sigma_minus'``, ``'sigma_plus'``.
         """
-        df_fitted = self._get_df_fitted_parameters()
-        df_fixed  = self._get_df_fixed_parameters()
-        df_flux   = self._get_df_flux_parameters()
-        return pd.concat([df_fitted, df_fixed, df_flux], ignore_index=True)
-
-    # -----------------------------------------------------------------------
-    # Private helpers
-    # -----------------------------------------------------------------------
-
-    def _get_df_fitted_parameters(self) -> pd.DataFrame:
-        """
-        Build the fitted parameters section of the DataFrame.
-
-        Uses the 50th percentile as values. ``sigma_minus = p50 - p16``
-        and ``sigma_plus = p84 - p50``, both stored as positive numbers.
-        """
-        p = self.percentiles
+        p = self.fitter.results.percentiles
         return pd.DataFrame({
             'parameter_names': list(self.parameters_to_fit),
             'values':          list(p[1]),
-            'sigma_minus':     list(p[1] - p[0]),
-            'sigma_plus':      list(p[2] - p[1]),
+            'sigma_minus':     list(self.fitter.results.sigma_minus),
+            'sigma_plus':      list(self.fitter.results.sigma_plus),
         })
 
-    def _get_df_fixed_parameters(self) -> pd.DataFrame:
+    def _get_df_fixed_parameters_emcee(self) -> pd.DataFrame:
         """
-        Build the fixed parameters and N_data section of the DataFrame.
+        Build the fixed parameters and N_data section of the DataFrame
+        for emcee results.
 
-        Fixed parameters are those present in ``best`` but absent from the
-        linear-mapped ``parameters_to_fit``. ``chi2`` is included here.
-        ``N_data`` (total good data points across all datasets) is appended
-        last. All sigma columns are NaN.
+        Fixed parameters are those present in ``best`` but absent from
+        the linear-mapped ``parameters_to_fit``. ``chi2`` is included
+        here. ``N_data`` (total good data points across all datasets)
+        is appended last. All sigma columns are NaN.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: ``'parameter_names'``, ``'values'``,
+            ``'sigma_minus'``, ``'sigma_plus'``.
         """
         linear_params_to_fit = {
             self.fitter.get_parameter_name(p)
@@ -422,29 +397,30 @@ class EmceeFitResults(BaseFitResults):
             'sigma_plus':      [np.nan] * n,
         })
 
-    def _get_df_flux_parameters(self) -> pd.DataFrame:
+    def _get_df_flux_parameters_emcee(self) -> pd.DataFrame:
         """
-        Build the flux parameters section of the DataFrame.
+        Build the flux parameters section of the DataFrame for emcee results.
 
-        Sets the fitter event to ``best_theta`` before computing fluxes to
-        ensure magnitudes correspond to the max-likelihood parameters.
-        Initializes the event first if it has not been set.
+        Delegates event setup to ``fitter.get_best_fit_event()``, which
+        sets model parameters to ``best_theta`` and fits fluxes.
 
         Source and blend fluxes are converted to magnitudes via
         ``MulensModel.utils.Utils.get_mag_and_err_from_flux``. Negative
         fluxes are reported as ``'neg flux'``. All sigma columns are NaN
         since flux uncertainties are not available from the emcee chain.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: ``'parameter_names'``, ``'values'``,
+            ``'sigma_minus'``, ``'sigma_plus'``.
         """
-        if self.fitter._event is None:
-            self.fitter.initialize_event()
-        self.fitter.event = self.fitter.best_theta
-        self.fitter.event.fit_fluxes()
+        event = self.fitter.get_best_fit_event()
+        source_fluxes = event.source_fluxes
+        blend_fluxes = event.blend_fluxes
 
         parameters = []
-        values     = []
-
-        source_fluxes = self.fitter._event.source_fluxes
-        blend_fluxes  = self.fitter._event.blend_fluxes
+        values = []
 
         for i, dataset in enumerate(self.datasets):
             obs, band = get_telescope_band_from_filename(
@@ -470,15 +446,22 @@ class EmceeFitResults(BaseFitResults):
                 values.append(mag)
 
         n = len(parameters)
-        print(parameters)
-        print(values)
-        print(source_fluxes, blend_fluxes)
         return pd.DataFrame({
             'parameter_names': parameters,
-            'values':          values,
-            'sigma_minus':     [np.nan] * n,
-            'sigma_plus':      [np.nan] * n,
+            'values': values,
+            'sigma_minus': [np.nan] * n,
+            'sigma_plus': [np.nan] * n,
         })
+
+    # -----------------------------------------------------------------------
+    # Property
+    # -----------------------------------------------------------------------
+
+    @property
+    def results(self):
+        """object : Full results object from the fitter."""
+        return self.fitter.results
+
 
 
 # ============================================================================

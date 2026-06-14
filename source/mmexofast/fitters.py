@@ -9,73 +9,111 @@ from .estimate_params import WidePlanetEnsembleInitializer
 from .mulens_object_config import ModelConfig, EventConfig
 
 
-class MinimalResults:
-    def __init__(
-        self,
-        emcee_percentiles=None,
-        x=None,
-        sigmas=None,
-        success=None,
-        msg=None,
-        parameters_to_fit=None,
-    ):
-        """
-        Parameters
-        ----------
-        emcee_percentiles : array-like of shape (n_parameters, 3), optional
-            The 16th, 50th, and 84th percentiles for each parameter in
-            parameters_to_fit. If provided, x and sigmas cannot also be given.
-        x : array-like, optional
-            Best-fit parameter values. Derived from emcee_percentiles
-            (50th percentile column) if emcee_percentiles is provided.
-        sigmas : array-like, optional
-            Parameter uncertainties. Derived from emcee_percentiles as the
-            mean of (p50 - p16) and (p84 - p50) per parameter if
-            emcee_percentiles is provided.
-        success : bool, optional
-            Whether the fit was successful.
-        msg : str, optional
-            A message describing the fit result.
-        parameters_to_fit : list, optional
-            Names of the parameters that were fitted.
-        """
-        if emcee_percentiles is not None:
-            if x is not None:
-                raise ValueError(
-                    "Cannot provide both 'emcee_percentiles' and 'x'. "
-                    "'x' is derived from 'emcee_percentiles'."
-                )
-            if sigmas is not None:
-                raise ValueError(
-                    "Cannot provide both 'emcee_percentiles' and 'sigmas'. "
-                    "'sigmas' is derived from 'emcee_percentiles'."
-                )
+class EmceeFitResults:
+    """
+    Results from a completed emcee MCMC run.
 
-        self.emcee_percentiles = (
-            np.array(emcee_percentiles) if emcee_percentiles is not None else None
-        )
-        self.success = success
-        self.msg = msg
+    Stores the full sampler and best-fit parameter vector, and lazily
+    computes percentiles and uncertainties from the post-burn-in chain.
+
+    Parameters
+    ----------
+    sampler : emcee.EnsembleSampler
+        The full sampler object from a completed emcee run.
+    x : array-like
+        Best-fit (max-likelihood) parameter values from the
+        post-burn-in chain.
+    emcee_settings : dict
+        Settings dict from the fitter. Must contain 'n_burn' and
+        'n_dim'. Other keys ('n_walkers', 'n_steps', etc.) are
+        stored but not used internally.
+    parameters_to_fit : list of str
+        Names of the parameters sampled by emcee, in the same order
+        as the chain columns.
+
+    Attributes
+    ----------
+    sampler : emcee.EnsembleSampler
+        The full sampler object.
+    x : np.ndarray, shape (n_dim,)
+        Best-fit (max-likelihood) parameter values.
+    emcee_settings : dict
+        Settings dict from the fitter.
+    parameters_to_fit : list of str
+        Names of the parameters sampled by emcee.
+
+    Notes
+    -----
+    ``sigma_minus = p50 - p16`` and ``sigma_plus = p84 - p50`` are both
+    stored as positive numbers. The minus sign is a display concern only.
+
+    Percentiles are computed lazily on first access and cached.
+    """
+
+    def __init__(self, sampler, x, emcee_settings, parameters_to_fit):
+        self.sampler = sampler
+        self.x = np.array(x)
+        self.emcee_settings = emcee_settings
         self.parameters_to_fit = parameters_to_fit
+        self._percentiles = None
 
-        if self.emcee_percentiles is not None:
-            p16 = self.emcee_percentiles[0, :]
-            p50 = self.emcee_percentiles[1, :]
-            p84 = self.emcee_percentiles[2, :]
-            self.x = p50
-            self.sigmas = ((p50 - p16) + (p84 - p50)) / 2
-        else:
-            self.x = x
-            self.sigmas = sigmas
+    @property
+    def percentiles(self):
+        """
+        np.ndarray, shape (3, n_dim) : 16th, 50th, and 84th percentiles
+        of the post-burn-in chain, one column per parameter in
+        ``parameters_to_fit``. Rows are p16, p50, p84. Computed once
+        and cached.
+        """
+        if self._percentiles is None:
+            n_burn = self.emcee_settings['n_burn']
+            n_dim  = self.emcee_settings['n_dim']
+            samples = self.sampler.chain[:, n_burn:, :].reshape((-1, n_dim))
+            self._percentiles = np.percentile(samples, [16, 50, 84], axis=0)
+        return self._percentiles
+
+    @property
+    def sigma_minus(self):
+        """
+        np.ndarray, shape (n_dim,) : p50 - p16 for each parameter,
+        stored as a positive number.
+        """
+        return self.percentiles[1] - self.percentiles[0]
+
+    @property
+    def sigma_plus(self):
+        """
+        np.ndarray, shape (n_dim,) : p84 - p50 for each parameter,
+        stored as a positive number.
+        """
+        return self.percentiles[2] - self.percentiles[1]
+
+    @property
+    def sigmas(self):
+        """
+        np.ndarray, shape (n_dim,) : Symmetric 1-sigma uncertainties,
+        computed as (sigma_minus + sigma_plus) / 2.
+        """
+        return (self.sigma_minus + self.sigma_plus) / 2
 
     def __repr__(self):
+        """
+        Return a compact string representation of EmceeFitResults.
+
+        Returns
+        -------
+        str
+            String representation showing parameters, x values, and
+            symmetric sigmas.
+        """
         return (
-            f"MinimalResults(\n"
+            f"EmceeFitResults(\n"
             f"  parameters_to_fit={self.parameters_to_fit},\n"
             f"  x={self.x},\n"
             f"  sigmas={self.sigmas},\n"
-            f"  success={self.success},\n"
-            f"  msg={self.msg}\n"
+            f"  n_burn={self.emcee_settings['n_burn']},\n"
+            f"  n_steps={self.emcee_settings['n_steps']},\n"
+            f"  n_walkers={self.emcee_settings['n_walkers']},\n"
             f")"
         )
 
@@ -595,6 +633,26 @@ class EmceeLCFitter(MulensFitter):
             datasets=self.datasets,
         )
 
+    def get_best_fit_event(self):
+        """
+        Return the event evaluated at the best-fit (max-likelihood) parameters
+        with fluxes fitted.
+
+        Initialises the event from ``initial_guess`` if it has not yet been
+        created. Sets the model parameters to ``best_theta`` and calls
+        ``fit_fluxes()`` before returning.
+
+        Returns
+        -------
+        MulensModel.Event
+            Event at the max-likelihood parameters with fluxes fitted.
+        """
+        if self._event is None:
+            self.initialize_event()
+        self.event = self.best_theta
+        self._event.fit_fluxes()
+        return self._event
+
     # ------------------------------------------------------------------ #
     # Starting ensemble                                                    #
     # ------------------------------------------------------------------ #
@@ -874,6 +932,13 @@ class EmceeLCFitter(MulensFitter):
 
         self.best = self._event.model.parameters.parameters
         self.best['chi2'] = self._event.get_chi2()
+
+        self.results = EmceeFitResults(
+            sampler=self.sampler,
+            x=self.best_theta,
+            emcee_settings=self.emcee_settings,
+            parameters_to_fit=self.parameters_to_fit,
+        )
 
 
 class AnomalyFitter(EmceeLCFitter):
