@@ -1481,114 +1481,150 @@ class MMEXOFASTFitter:
 
     def renormalize_datasets(self) -> None:
         """
-        Run outlier rejection and compute per-dataset error rescaling
-        factors.
+        Run outlier rejection and compute per-dataset error rescaling factors.
 
         Notes
         -----
         Datasets already present in ``self.renorm_factors`` are skipped.
         Combines logic from the old ``_remove_outliers_and_calc_errfacs``
-        and ``_apply_error_renormalization``.  Rebuilds
-        ``fix_blend_flux_map`` and ``fix_source_flux_map`` after
-        replacing dataset objects.
+        and ``_apply_error_renormalization``.  Rebuilds ``fix_blend_flux_map``
+        and ``fix_source_flux_map`` after replacing dataset objects.
 
-        If ``self.intermediate_results.anomaly_lc_params`` is set and
-        contains ``'t_0'`` and ``'t_eff'`` keys, data points whose
-        timestamps fall within the window ``[t_0 - t_eff, t_0 + t_eff]``
-        are **protected from outlier rejection**.  The anomaly signal
-        should not be treated as a systematic and removed.
+        If ``self.intermediate_results.anomaly_lc_params`` is set and contains
+        ``'t_0'`` and ``'dt'`` keys, data points whose timestamps fall within
+        the window ``[t_0 - dt, t_0 + dt]`` are **protected from outlier
+        rejection**.  The anomaly signal should not be treated as a systematic
+        and removed.
         """
-        reference_fit = self.select_best_model()
-        reference_model = reference_fit.full_result.fitter.get_model()
-        logger.info(
-            'Renormalizing using: %s',
-            model_key_to_label(reference_fit.model_key),
-        )
-
-        event = self.event_config.build(
-            model=reference_model,
-            datasets=self.datasets,
-        )
-        event.fit_fluxes()
-
-        sig = inspect.signature(MulensModel.MulensData.__init__)
-        new_datasets: list = []
-
-        # ------------------------------------------------------------------
-        # Resolve the anomaly window once, outside the dataset loop.
-        # Points inside [t_pl - dt, t_pl + dt] must never be flagged as
-        # outliers, because they carry the planetary signal that the
-        # reference (point-lens) model cannot describe.
-        # ------------------------------------------------------------------
-        # TODO: Could do weird stuff for long-duration, weak anomalies.
-        # TODO: Doesn't work retroactively if renormalize errors was run on the PSPL fit.
-        anomaly_t_range: Optional[tuple] = None
-        anomaly_lc_params = self.intermediate_results.anomaly_lc_params
-        print('anomaly_lc_params:', anomaly_lc_params)
-        if anomaly_lc_params is not None:
-            t_pl = anomaly_lc_params.get('t_0')
-            dt = anomaly_lc_params.get('t_eff')
-            if t_pl is not None and dt is not None:
-                anomaly_t_range = (t_pl - dt, t_pl + dt)
-                logger.info(
-                    'Anomaly window protection active: '
-                    't_0=%.6f, t_eff=%.6f  →  [%.6f, %.6f]',
-                    t_pl, dt, anomaly_t_range[0], anomaly_t_range[1],
-                )
+        event = self._build_renorm_event()
+        new_datasets = []
 
         for i, dataset in enumerate(self.datasets):
             label = dataset.plot_properties['label']
-
             if label in self.renorm_factors:
                 new_datasets.append(dataset)
                 continue
+            new_ds, errfac = self._process_single_dataset(i, event)
+            new_datasets.append(new_ds)
+            self.renorm_factors[label] = errfac
 
-            n_params = len(reference_model.parameters.as_dict())
-            bad_index: Any = -1
+        self.datasets = new_datasets
+        self.fix_blend_flux_map = self._map_label_dict_to_datasets(self.fix_blend_flux)
+        self.fix_source_flux_map = self._map_label_dict_to_datasets(self.fix_source_flux)
+        self.event_config = self._build_event_config()
 
-            # Build the per-dataset protected mask (time-based, constant
-            # throughout the loop since dataset.time never changes).
-            if anomaly_t_range is not None:
-                protected_mask = (
-                        (dataset.time >= anomaly_t_range[0]) &
-                        (dataset.time <= anomaly_t_range[1])
-                )
-                n_protected = int(np.sum(protected_mask & dataset.good))
-                if n_protected > 0:
+    def _build_renorm_event(self):
+        """
+        Build and fit the reference event used throughout renormalization.
+
+        Selects the best available model via ``select_best_model``, constructs
+        a MulensModel event from the current datasets, and performs an initial
+        flux fit.
+
+        Returns
+        -------
+        MulensModel.Event
+        """
+        fit = self.select_best_model()
+        model = fit.full_result.fitter.get_model()
+        logger.info('Renormalizing using: %s', model_key_to_label(fit.model_key))
+        event = self.event_config.build(model=model, datasets=self.datasets)
+        event.fit_fluxes()
+        return event
+
+    def _build_protected_mask(self, dataset) -> np.ndarray:
+        """
+        Return a boolean mask of points that must survive outlier rejection.
+
+        Reads ``intermediate_results.anomaly_lc_params`` for ``t_0`` and
+        ``dt``; if either is absent the mask is all-False (no protection).
+
+        Points inside the window ``[t_0 - dt, t_0 + dt]`` are protected
+        because the reference (point-lens) model cannot describe the planetary
+        anomaly, so those points would otherwise be the first to be flagged as
+        outliers.
+
+        Parameters
+        ----------
+        dataset : MulensModel.MulensData
+
+        Returns
+        -------
+        np.ndarray of bool
+            Same length as ``dataset.time``.
+        """
+        params = self.intermediate_results.anomaly_lc_params
+        if params is not None:
+            t_pl, dt = params.get('t_0'), params.get('dt')
+            if t_pl is not None and dt is not None:
+                t0, t1 = t_pl - dt, t_pl + dt
+                logger.info('Anomaly window protection active: [%.6f, %.6f]', t0, t1)
+                mask = (dataset.time >= t0) & (dataset.time <= t1)
+                n = int(np.sum(mask & dataset.good))
+                if n > 0:
                     logger.info(
-                        '  %s: %d point(s) inside anomaly window are '
-                        'protected from outlier rejection.',
-                        label, n_protected,
+                        '  %s: %d point(s) inside anomaly window are protected.',
+                        dataset.plot_properties['label'], n,
                     )
-            else:
-                protected_mask = np.zeros(len(dataset.time), dtype=bool)
+                return mask
+        return np.zeros(len(dataset.time), dtype=bool)
 
-            # Iterative outlier removal
+    def _process_single_dataset(
+            self, i: int, event
+    ) -> tuple[MulensModel.MulensData, float]:
+        """
+        Remove outliers from dataset *i*, compute its error rescaling factor,
+        and return a rescaled copy.
+
+        ``compute_errfac`` and ``remove_outliers`` are defined as closures so
+        they share ``dataset``, ``protected_mask``, and ``n_params`` without
+        argument threading.  ``remove_outliers`` mutates ``dataset.bad`` in
+        place and has no meaningful use in isolation.
+
+        The scatter estimate in ``compute_errfac`` is anchored to non-anomaly
+        good points only, preventing the planetary signal from inflating the
+        error bars of the whole dataset.
+
+        Parameters
+        ----------
+        i : int
+            Index into ``event.datasets``.
+        event : MulensModel.Event
+            Reference event, already flux-fitted.
+
+        Returns
+        -------
+        tuple[MulensModel.MulensData, float]
+            ``(rescaled_dataset, errfac)``
+        """
+        dataset = event.datasets[i]
+        n_params = len(event.model.parameters.as_dict())
+        protected_mask = self._build_protected_mask(dataset)
+
+        def compute_errfac(res: np.ndarray, err: np.ndarray) -> float:
+            """Chi2-based scatter estimate using non-anomaly good points only."""
+            clean = dataset.good & ~protected_mask
+            dof = int(np.sum(clean)) - n_params
+            return (
+                float(np.sqrt(np.sum((res[clean] / err[clean]) ** 2) / dof))
+                if dof > 0 else 1.0
+            )
+
+        def remove_outliers() -> None:
+            """Iteratively flag the worst outlier until none exceed max_sig."""
+            bad_index: Any = -1
             while bad_index is not None:
                 event.fit_fluxes()
-                n_good = int(np.sum(dataset.good))
-                dof = n_good - n_params
+                dof = int(np.sum(dataset.good)) - n_params
                 if dof <= 0:
                     break
-                max_sig = max(
-                    np.sqrt(2.0) * erfcinv(1.0 / dof), 3.0
-                )
-                chi2 = event.get_chi2_for_dataset(i)
-                errfac = np.sqrt(chi2 / dof)
-                res, err = event.fits[i].get_residuals(
-                    phot_fmt='flux', bad=True
-                )
-                sigma = np.abs(res / (err * errfac))
-
-                # Candidates are good points that are NOT in the anomaly
-                # window.  Protected points may exceed max_sig (because the
-                # point-lens model cannot fit the anomaly), but they must
-                # not be removed.
+                max_sig = max(np.sqrt(2.0) * erfcinv(1.0 / dof), 3.0)
+                res, err = event.fits[i].get_residuals(phot_fmt='flux', bad=True)
+                sigma = np.abs(res / (err * compute_errfac(res, err)))
                 candidate_mask = dataset.good & ~protected_mask
                 if np.any(sigma[candidate_mask] > max_sig):
-                    candidate_indices = np.where(candidate_mask)[0]
-                    i_worst = np.argmax(sigma[candidate_mask])
-                    bad_idx = candidate_indices[[i_worst]]  # shape (1,)
+                    candidates = np.where(candidate_mask)[0]
+                    bad_idx = candidates[[np.argmax(sigma[candidate_mask])]]
                     new_bad = dataset.bad.copy()
                     new_bad[bad_idx] = True
                     dataset.bad = new_bad
@@ -1596,54 +1632,47 @@ class MMEXOFASTFitter:
                 else:
                     bad_index = None
 
-            # Final error factor
-            event.fit_fluxes()
-            final_chi2 = event.get_chi2_for_dataset(i)
-            final_dof = int(np.sum(dataset.good)) - n_params
-            errfac = (
-                np.sqrt(final_chi2 / final_dof)
-                if final_dof > 0
-                else 1.0
-            )
-            logger.info('  %s: errfac=%.3f', label, errfac)
+        remove_outliers()
+        event.fit_fluxes()
+        res, err = event.fits[i].get_residuals(phot_fmt='flux', bad=True)
+        errfac = compute_errfac(res, err)
+        logger.info('  %s: errfac=%.3f', dataset.plot_properties['label'], errfac)
+        return self._recreate_dataset(dataset, errfac), errfac
 
-            # Recreate dataset with scaled errors
-            kwargs = {
-                k: getattr(dataset, k)
-                for k in sig.parameters
-                if k not in (
-                    'self', 'data_list', 'good',
-                    'phot_fmt', 'file_name',
-                )
-                   and hasattr(dataset, k)
-            }
-            new_datasets.append(
-                MulensModel.MulensData(
-                    data_list=[
-                        dataset.time,
-                        dataset.flux,
-                        errfac * dataset.err_flux,
-                    ],
-                    phot_fmt='flux',
-                    **kwargs,
-                )
-            )
-            self.renorm_factors[label] = errfac
+    def _recreate_dataset(
+            self, dataset: MulensModel.MulensData, errfac: float
+    ) -> MulensModel.MulensData:
+        """
+        Return a new ``MulensData`` instance identical to *dataset* but with
+        error bars scaled by *errfac*.
 
-        self.datasets = new_datasets
+        Constructor keyword arguments are copied from *dataset* via
+        introspection of ``MulensData.__init__``, excluding ``data_list``,
+        ``good``, ``phot_fmt``, and ``file_name``, which are either supplied
+        explicitly or are not applicable to an in-memory copy.
 
-        # Rebuild flux-fixing maps with updated dataset objects
-        self.fix_blend_flux_map = self._map_label_dict_to_datasets(
-            self.fix_blend_flux
-        )
-        self.fix_source_flux_map = self._map_label_dict_to_datasets(
-            self.fix_source_flux
+        Parameters
+        ----------
+        dataset : MulensModel.MulensData
+        errfac : float
+
+        Returns
+        -------
+        MulensModel.MulensData
+        """
+        sig = inspect.signature(MulensModel.MulensData.__init__)
+        kwargs = {
+            k: getattr(dataset, k)
+            for k in sig.parameters
+            if k not in ('self', 'data_list', 'good', 'phot_fmt', 'file_name')
+               and hasattr(dataset, k)
+        }
+        return MulensModel.MulensData(
+            data_list=[dataset.time, dataset.flux, errfac * dataset.err_flux],
+            phot_fmt='flux',
+            **kwargs,
         )
 
-        # Rebuild event_config: renormalization replaced dataset objects,
-        # which invalidates the dataset-keyed flux-fixing maps.
-        self.event_config = self._build_event_config()
-        
     def refit_all(self) -> None:
         """
         Refit all stored fits using updated error normalization.
@@ -2610,13 +2639,6 @@ class MMEXOFASTFitter:
         path = self._output_config.plot_path('lc')
         plt.savefig(path)
         logger.info('Saved light curve plot to %s.', path)
-
-        # if it's a binary, also plot the trajectory with caustics
-        if event.model.n_lenses > 1:
-            event.plot_trajectory()
-            path = self._output_config.plot_path('traj')
-            plt.savefig(path)
-            logger.info('Saved trajectory plot to %s.', path)
 
     # ------------------------------------------------------------------
     # Dataset helpers
