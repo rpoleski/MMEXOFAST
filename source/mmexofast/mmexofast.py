@@ -1498,7 +1498,7 @@ class MMEXOFASTFitter:
         are **protected from outlier rejection**.  The anomaly signal
         should not be treated as a systematic and removed.
         """
-        reference_fit = self.select_best_point_lens_model()
+        reference_fit = self.select_best_model()
         reference_model = reference_fit.full_result.fitter.get_model()
         logger.info(
             'Renormalizing using: %s',
@@ -1524,6 +1524,7 @@ class MMEXOFASTFitter:
         # TODO: Doesn't work retroactively if renormalize errors was run on the PSPL fit.
         anomaly_t_range: Optional[tuple] = None
         anomaly_lc_params = self.intermediate_results.anomaly_lc_params
+        print('anomaly_lc_params:', anomaly_lc_params)
         if anomaly_lc_params is not None:
             t_pl = anomaly_lc_params.get('t_0')
             dt = anomaly_lc_params.get('t_eff')
@@ -1668,18 +1669,15 @@ class MMEXOFASTFitter:
             )
             logger.info('    sigmas:  %s', list(fitter.results.sigmas))
 
-    def select_best_point_lens_model(self) -> FitRecord:
+    def _select_best_lens_model(self, lens_type: LensType) -> FitRecord:
         """
-        Return the best point-lens ``FitRecord`` from
-        ``all_fit_results``.
+        Internal helper: return the best ``FitRecord`` for the given
+        ``lens_type``, preferring the parallax model when its chi-squared
+        improvement over the best static model exceeds 50.
 
-        Prefers the best parallax model when its chi-squared improvement
-        over the best static model exceeds 50; otherwise returns the best
-        static model.
-
-        If no complete point-lens fits exist but exactly one point-lens
-        record is present (e.g. a user-supplied initial guess), that
-        record is returned directly regardless of chi-squared.
+        Parameters
+        ----------
+        lens_type : LensType
 
         Returns
         -------
@@ -1688,43 +1686,46 @@ class MMEXOFASTFitter:
         Raises
         ------
         RuntimeError
-            If no point-lens fits are available.
+            If no fits of the requested lens type are available, or if
+            multiple incomplete records exist and none have chi-squared.
         """
         DELTA_CHI2 = 50.0
+        label = lens_type.name.lower()
 
-        point_lens_fits = [
+        lens_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == LensType.POINT
+            if key.lens_type == lens_type
         ]
 
-        if not point_lens_fits:
-            raise RuntimeError('No point-lens fits found in all_fit_results.')
+        if not lens_fits:
+            raise RuntimeError(
+                f'No {label} fits found in all_fit_results.'
+            )
 
         if self._initial_entry_point == 'search_for_anomaly':
-            return point_lens_fits[0]
+            return lens_fits[0]
 
-        complete_fits = [rec for rec in point_lens_fits if rec.chi2() is not None]
+        complete_fits = [rec for rec in lens_fits if rec.chi2() is not None]
 
         # If no complete fits exist, return the sole available record
-        # (e.g. a user-supplied initial guess without chi2)
+        # (e.g. a user-supplied initial guess without chi2).
         if not complete_fits:
-            if len(point_lens_fits) > 1:
+            if len(lens_fits) > 1:
                 raise RuntimeError(
-                    'No complete point-lens fits found and more than one '
+                    f'No complete {label} fits found and more than one '
                     'incomplete record exists — cannot select best model.'
                 )
-            else:
-                return point_lens_fits[0]
+            return lens_fits[0]
 
         static_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == LensType.POINT
+            if key.lens_type == lens_type
                and key.parallax_branch == ParallaxBranch.NONE
                and rec.chi2() is not None
         ]
         parallax_fits = [
             rec for key, rec in self.all_fit_results.items()
-            if key.lens_type == LensType.POINT
+            if key.lens_type == lens_type
                and key.parallax_branch != ParallaxBranch.NONE
                and rec.chi2() is not None
         ]
@@ -1743,6 +1744,92 @@ class MMEXOFASTFitter:
         if best_static.chi2() - best_par.chi2() > DELTA_CHI2:
             return best_par
         return best_static
+
+    def select_best_point_lens_model(self) -> FitRecord:
+        """
+        Return the best point-lens ``FitRecord`` from ``all_fit_results``.
+
+        Prefers the best parallax model when its chi-squared improvement
+        over the best static model exceeds 50; otherwise returns the best
+        static model.
+
+        If no complete point-lens fits exist but exactly one point-lens
+        record is present (e.g. a user-supplied initial guess), that
+        record is returned directly regardless of chi-squared.
+
+        Returns
+        -------
+        FitRecord
+
+        Raises
+        ------
+        RuntimeError
+            If no point-lens fits are available.
+        """
+        return self._select_best_lens_model(LensType.POINT)
+
+    def select_best_binary_model(self) -> FitRecord:
+        """
+        Return the best binary-lens ``FitRecord`` from ``all_fit_results``.
+
+        Prefers the best parallax model when its chi-squared improvement
+        over the best static model exceeds 50; otherwise returns the best
+        static model.
+
+        If no complete binary fits exist but exactly one binary record is
+        present (e.g. a user-supplied initial guess), that record is
+        returned directly regardless of chi-squared.
+
+        Returns
+        -------
+        FitRecord
+
+        Raises
+        ------
+        RuntimeError
+            If no binary fits are available.
+        """
+        return self._select_best_lens_model(LensType.BINARY)
+
+    def select_best_model(self) -> FitRecord:
+        """
+        Return the overall best ``FitRecord`` across all lens types.
+
+        Compares the best point-lens model against the best binary model.
+        The binary model is preferred only when its chi-squared is lower
+        than the point-lens model's by more than 20.  If no binary fits
+        are available the best point-lens model is returned unconditionally.
+
+        Returns
+        -------
+        FitRecord
+
+        Raises
+        ------
+        RuntimeError
+            If no point-lens fits are available.
+        """
+        DELTA_CHI2_BINARY = 20.0
+
+        best_point = self.select_best_point_lens_model()
+
+        try:
+            best_binary = self.select_best_binary_model()
+        except RuntimeError:
+            return best_point
+
+        # Guard against records that have no chi2 (e.g. initial guesses).
+        point_chi2 = best_point.chi2()
+        binary_chi2 = best_binary.chi2()
+
+        if binary_chi2 is None:
+            return best_point
+        if point_chi2 is None:
+            return best_binary
+
+        if point_chi2 - binary_chi2 > DELTA_CHI2_BINARY:
+            return best_binary
+        return best_point
 
     def compute_residuals(self) -> None:
         """
