@@ -201,7 +201,15 @@ class BinaryLensParams():
         -------
         MulensModel.Model
         """
-        model = MulensModel.Model(self.ulens)
+        if default_method == 'point_source':
+            ulens_params = {
+                k: v for k, v in self.ulens.items()
+                if k not in ('rho', 't_star')
+            }
+        else:
+            ulens_params = self.ulens
+
+        model = MulensModel.Model(ulens_params)
         model.default_magnification_method = default_method
         return model
 
