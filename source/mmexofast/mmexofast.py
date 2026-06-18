@@ -2022,6 +2022,7 @@ class MMEXOFASTFitter:
         logger.info(f'PL chi2: {pspl_chi2:.1f}, N_good: {n_data}')
 
         # TODO: Implement grid search for high-mag models. See gridsearches.BinaryGridSearch()
+        # TODO: Separate models (key/param items) into separate steps.
 
         for key, params in self.intermediate_results.est_binary_params.items():
             model = self.model_config.build(
