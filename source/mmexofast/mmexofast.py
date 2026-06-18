@@ -947,6 +947,7 @@ class MMEXOFASTFitter:
                 "Expected 'point_lens' or 'binary_lens'."
             )
 
+        # TODO: ADD something to the workflow that checks for negative fluxes and refits with fb=0 if True.
         if self._initial_entry_point is not None:
             entry_idx = next(
                 (i for i, s in enumerate(all_steps)
@@ -1718,6 +1719,7 @@ class MMEXOFASTFitter:
             If no fits of the requested lens type are available, or if
             multiple incomplete records exist and none have chi-squared.
         """
+        # TODO: ADD a THRESHOLDS parameter (dict) that can hold all the thresholds like DELTA_CHI2 so the user can control them.
         DELTA_CHI2 = 50.0
         label = lens_type.name.lower()
 
