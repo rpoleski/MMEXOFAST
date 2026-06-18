@@ -530,7 +530,8 @@ class BinaryLensParams():
             raise RuntimeError(
                 "Refined mag_method boundaries are not monotonic. "
                 "This indicates a bug in _compute_boundary_start or "
-                "_find_method_boundary.")
+                "_find_method_boundary.\nparameters: {0}\nmag_methods: {1}".format(
+                    self.ulens, self.mag_methods))
 
 
 def get_wide_params(params, limit='GG97'):
