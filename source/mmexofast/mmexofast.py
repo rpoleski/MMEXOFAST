@@ -510,7 +510,7 @@ class MMEXOFASTFitter:
         limb_darkening_coeffs_gamma=None,
         fix_blend_flux=None,
         fix_source_flux=None,
-        renormalize_errors: bool = True,
+        renormalize_errors: bool = True,  # TODO: ADD option for remove_outliers=True/False
         no_parallax: bool = False,
         parallax_grid: bool = False,
         primary_location=None,
@@ -521,7 +521,7 @@ class MMEXOFASTFitter:
         stop_after: Optional[str] = None,
         restart_file=None,
         restart_from=None,
-        initial_results=None,
+        initial_results=None, # TODO: Implement starting from prior results.
         output_config=None,
         verbose: bool = False,
         log_file=None,
@@ -1964,6 +1964,7 @@ class MMEXOFASTFitter:
         if self.intermediate_results.anomaly_type == 'wide':
             estimator_classes = [WidePlanetGridSearchEstimator, CloseUpperBinaryGridSearchEstimator,
                                  CloseLowerBinaryGridSearchEstimator]
+            # TODO: Implement checking for large vs. small rho solutions. Maybe add a second estimator?
         elif self.intermediate_results.anomaly_type == 'close':
             estimator_classes = [ClosePlanetGridSearchEstimator]
         else:
@@ -2020,6 +2021,8 @@ class MMEXOFASTFitter:
         n_data = sum(np.sum(dataset.good) for dataset in self.datasets)
         logger.info(f'PL chi2: {pspl_chi2:.1f}, N_good: {n_data}')
 
+        # TODO: Implement grid search for high-mag models. See gridsearches.BinaryGridSearch()
+
         for key, params in self.intermediate_results.est_binary_params.items():
             model = self.model_config.build(
                 parameters=params.ulens,
@@ -2034,6 +2037,7 @@ class MMEXOFASTFitter:
             logger.info(f'{key} initial chi2: {binary_chi2:.1f}')
             if (pspl_chi2 - binary_chi2) * n_data / np.min((binary_chi2, pspl_chi2)) < 3.:
                 logger.info(f'Binary model does not improve chi2 enough, skipping.')
+                # TODO: if model is "alt" try seeding from the fitted regular solution.
                 continue
 
             # Do the fit
@@ -2561,6 +2565,7 @@ class MMEXOFASTFitter:
         return xlim, ylim
 
     def _plot_event(self, event, n_tE=5, suptitle=None):
+        # TODO: ADD automatic ylim
         if suptitle is None:
             suptitle = '{0}'.format(event.model.parameters)
 
@@ -2597,7 +2602,8 @@ class MMEXOFASTFitter:
 
         if panels > 2:
             plt.subplot(1, panels, 3)
-            event.plot_trajectory(caustics=True, zorder=10)
+            event.plot_trajectory(t_range=planet_t_range, caustics=True, zorder=10)
+            # TODO: add scaled source to plot to indicate size.
             plt.gca().set_aspect('equal')
             xlim, ylim = self._get_anomaly_source_plane_region(event, planet_t_range)
             plt.xlim(xlim)

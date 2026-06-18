@@ -493,12 +493,13 @@ class EmceeLCFitter(MulensFitter):
         'acceptance_fraction': 0.1,
     }
 
+    # TODO: Implement all the fancy diagnostic plots from Radek's Example 16.
     def __init__(self, initial_guess=None, emcee_settings=None, **kwargs):
         super().__init__(**kwargs)
         self.initial_guess = initial_guess
         self._event = None
 
-        # Default parameters_to_fit to initial_guess keys when not explicitly
+        # Default parameters_to_fit to initial_guess key
         # provided via kwargs → MulensFitter.__init__.
         if self._parameters_to_fit is None and initial_guess is not None:
             self.parameters_to_fit = list(initial_guess.keys())
@@ -883,7 +884,7 @@ class EmceeLCFitter(MulensFitter):
             mean_af = 1.0
             for _ in self.sampler.sample(
                     starting_vector, iterations=self.emcee_settings['n_steps']):
-
+                # TODO: ADD option to periodically output results.
                 if (self.sampler.iteration % 100) != 0:
                     continue
                 if self.emcee_settings.get('acceptance_fraction') is None:
@@ -1114,6 +1115,7 @@ class AnomalyFitter(EmceeLCFitter):
 
         return sigmas
 
+# TODO: ADD child class of AnomalyFitter that uses dxsi parameter.
 
 class WidePlanetEnsembleInitialization(AnomalyFitter):
     """
