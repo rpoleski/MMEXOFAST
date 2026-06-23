@@ -5,3 +5,4 @@
 /source/htmlcov/
 __pycache__
 *egg-info*
+/examples/test_output/

@@ -1,28 +1,25 @@
 """
 Use case to show stopping and restarting a fit.
 """
-import exozippy
+import mmexofast as mmexo
 import os.path
-import json
 from pathlib import Path
 
-#from exozippy.mmexofast import OutputConfig
-
 ground_data_files = [os.path.join(
-        exozippy.MULENS_DATA_PATH, 'OB140939', 'n20100310.I.OGLE.OB140939.txt')]
+        mmexo.DATA_PATH, 'OB140939', 'n20100310.I.OGLE.OB140939.txt')]
 space_data_files = [os.path.join(
-        exozippy.MULENS_DATA_PATH, 'OB140939', 'n20140605.L.Spitzer.OB140939.txt')]
+        mmexo.DATA_PATH, 'OB140939', 'n20140605.L.Spitzer.OB140939.txt')]
 coords='17:47:12.25 -21:22:58.7'
 
 base_dir = Path('test_output')
 
 #print('=== Fit raw data ===')
 raw_file_prefix = 'ob0939_uc02c_raw'
-raw_fitter = exozippy.mmexofast.MMEXOFASTFitter(
+raw_fitter = mmexo.mmexofast.MMEXOFASTFitter(
     files=ground_data_files, coords=coords, fit_type='point_lens', renormalize_errors=False,
     verbose=True, restart_file=os.path.join(base_dir, 'ob0939_uc02c.pkl'),
     log_file=os.path.join(base_dir, raw_file_prefix+'.log'),
-    output_config=exozippy.mmexofast.OutputConfig(
+    output_config=mmexo.mmexofast.OutputConfig(
         output_dir=base_dir, file_prefix=raw_file_prefix, save_plots=True, save_table=True, save_exozippy_init=True))
 raw_fitter.fit()
 raw_fitter.close()
@@ -43,17 +40,17 @@ raw_fitter.close()
 
 print('=== Restart from pickle and Fit w/Error Renorm ===')
 cont_file_prefix ='ob0939_uc02c_gr'
-cont_fitter = exozippy.mmexofast.MMEXOFASTFitter(
+cont_fitter = mmexo.mmexofast.MMEXOFASTFitter(
     restart_file='test_output/ob0939_uc02c.pkl',
     log_file=os.path.join(base_dir, cont_file_prefix+'.log'),
     renormalize_errors=True, verbose=True,
-    #parallax_grid=True,
-    output_config=exozippy.mmexofast.OutputConfig(
+    parallax_grid=True,
+    output_config=mmexo.mmexofast.OutputConfig(
          output_dir=base_dir, file_prefix=cont_file_prefix,
          save_plots=True, save_grid_results=True, save_table=True, save_exozippy_init=True))
 cont_fitter.fit()
 cont_fitter.close()
-print('initialize_exozippy after renorm:\n', cont_fitter.initialize_exozippy())
+print('initialize_mmexo after renorm:\n', cont_fitter.initialize_exozippy())
 # ------
 # Expected workflow: Renormalize errors, refit all models, run parallax grids
 #
@@ -80,14 +77,14 @@ print('initialize_exozippy after renorm:\n', cont_fitter.initialize_exozippy())
 #print('=== Run the full end-to-end Ground workflow ===')
 ## Run the full ground workflow without stopping.
 full_file_prefix = 'ob0939_uc02c_full'
-full_gr_fitter = exozippy.mmexofast.mmexofast.fit(
+full_gr_fitter = mmexo.mmexofast.fit(
     files=ground_data_files,
     coords=coords, fit_type='point_lens',
     parallax_grid=True,
     renormalize_errors=True,
     verbose=True,
     log_file=os.path.join(base_dir, full_file_prefix+'.log'),
-    output_config=exozippy.mmexofast.OutputConfig(
+    output_config=mmexo.mmexofast.OutputConfig(
          output_dir=base_dir, file_prefix=full_file_prefix,
          save_plots=True, save_grid_results=True, save_table=True, save_exozippy_init=True)
     )
@@ -95,7 +92,7 @@ full_gr_fitter.fit()
 full_gr_fitter.close()
 
 #print('=== Restart from pickle and ADD Spitzer Data ===')
-#complete_fitter = exozippy.mmexofast.fit(
+#complete_fitter = mmexo.mmexofast.fit(
 #    files=ground_data_files + space_data_files,
 #    parallax_grid=True,
 #    renormalize_errors=True,
@@ -111,48 +108,10 @@ full_gr_fitter.close()
 # 1. Adding datafiles with a pickle
 # 2. Spitzer in observatories, incl. ephemerides file.
 # ------
-"""
-died here:
-
-Optimizing from u_0+ grid point: pi_E_E=-0.690, pi_E_N=1.200
-Optimized: chi2=228028.08, {'t_0': 2456836.163014465, 't_E': 209.43827447995199, 'u_0': 0.055728482821769385, 'pi_E_E': -2.0399809873892885, 'pi_E_N': 4.279236693634176, 'chi2': 228028.07703645638}
-Traceback (most recent call last):
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/examples/use_cases/use_case_02c_ob0939.py", line 73, in <module>
-    complete_fitter = exozippy.mmexofast.fit(
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 50, in fit
-    fitter.fit()
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 986, in fit
-    self.fit_point_lens()
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 1209, in fit_point_lens
-    comprehensive_parallax_fitting(initial_grids)
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 1175, in comprehensive_parallax_fitting
-    self._extract_and_optimize_parallax_solutions(
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 2201, in _extract_and_optimize_parallax_solutions
-    secondary_sign = self._get_space_u0_sign(fit_result, secondary_ephem)
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 2033, in _get_space_u0_sign
-    result = minimize_scalar(
-  File "/opt/miniconda3/envs/MMpyTorch/lib/python3.10/site-packages/scipy/optimize/_minimize.py", line 945, in minimize_scalar
-    res = _minimize_scalar_bounded(fun, bounds, args, **options)
-  File "/opt/miniconda3/envs/MMpyTorch/lib/python3.10/site-packages/scipy/optimize/_optimize.py", line 2426, in _minimize_scalar_bounded
-    fu = func(x, *args)
-  File "/Users/jyee/PycharmProjects/EXOZIPPy/exozippy/mmexofast/mmexofast.py", line 2026, in u_squared
-    trajectory = model.get_trajectory([time])
-  File "/Users/jyee/PycharmProjects/MulensModel/source/MulensModel/model.py", line 724, in get_trajectory
-    satellite_skycoord = self.get_satellite_coords(times)
-  File "/Users/jyee/PycharmProjects/MulensModel/source/MulensModel/model.py", line 1253, in get_satellite_coords
-    return satellite_skycoords.get_satellite_coords(times)
-  File "/Users/jyee/PycharmProjects/MulensModel/source/MulensModel/satelliteskycoord.py", line 55, in get_satellite_coords
-    self._check_times(times)
-  File "/Users/jyee/PycharmProjects/MulensModel/source/MulensModel/satelliteskycoord.py", line 104, in _check_times
-    raise ValueError(msg.format(*args))
-ValueError: Satellite ephemeris doesn't cover requested epochs.
-Ephemerides file: 2456658.500777592 2458849.5008007395
-Requested dates: 2456615.053144975 2456615.053144975
-"""
 
 #print('=== Run the full end-to-end Ground+Spitzer workflow ===')
 ## Run the full ground+space workflow without stopping.
-#full_fitter = exozippy.mmexofast.fit(
+#full_fitter = mmexo.mmexofast.fit(
 #    files=ground_data_files + space_data_files,
 #    coords=coords, fit_type='point lens',
 #    parallax_grid=True, renormalize_errors=True,
@@ -164,7 +123,7 @@ Requested dates: 2456615.053144975 2456615.053144975
 #full_fitter.fit()
 
 #
-# fixed_fb_fitter = exozippy.mmexofast.fit(
+# fixed_fb_fitter = mmexo.mmexofast.fit(
 #     files=ground_data_files + space_data_files, coords=coords, fit_type='point lens',
 #     parallax_grid=True,
 #     fix_blend_flux={ground_data_files[0]: True},
@@ -174,7 +133,7 @@ Requested dates: 2456615.053144975 2456615.053144975
 #         save_latex_tables=True, save_restart_files=True, save_grid_results=True)
 #     )
 #
-# sponly_fitter = exozippy.mmexofast.MMEXOFASTFitter(
+# sponly_fitter = mmexo.mmexofast.MMEXOFASTFitter(
 #     files=space_data_files, coords=coords, fit_type='space-only piE_grid',
 #     restart_file='test_output/ob0939_uc02c_full_restart.txt',
 #     output_config=OutputConfig(

@@ -893,7 +893,7 @@ class MMEXOFASTFitter:
 
             i += 1
 
-        if self._output_config is not None:
+        if (not self.dry_run) and self._output_config is not None:
             if self._output_config.save_table:
                 for fmt in self._output_config.table_formats:
                     table_str = self.make_ulens_table(table_type=fmt)
