@@ -615,7 +615,7 @@ class BaseRectGridSearch(ABC):
     verbose : bool
         Print progress. Default False.
     """
-
+    # TODO: This should be updated to use model_config/event_config to replace fitter_kwargs in the child classes.
     def __init__(self, grid_params=None, datasets=None,
                  evaluation_order='standard', start_point=None,
                  use_nearest_neighbor_init=True,
@@ -1999,6 +1999,7 @@ class BaseRectGridSearch(ABC):
         order : str
         nn_init : bool
         """
+        # TODO: use Claude to clean up this entire workflow so there aren't 5 args being passed.
         level_data = self.results_history[0]
         coarse_minima = self._find_minima_in_grid(
             level_data['chi2_grid'],
@@ -2960,8 +2961,8 @@ class ParallaxGridSearch(BaseRectGridSearch):
         model_params['pi_E_E'] = grid_params['pi_E_E']
         model_params['pi_E_N'] = grid_params['pi_E_N']
 
-        # TODO: investigate whether skip_optimization and non-skip branches
-        # can be unified (differ in fitter.run() call and chi2 retrieval method)
+        # TODO: investigate whether skip_optimization and non-skip branches can be unified (differ in fitter.run() call and chi2 retrieval method)
+        # TODO: implement emcee fitter for binary lenses.
         if self.skip_optimization:
             try:
                 fitter = SFitFitter(

@@ -1011,6 +1011,7 @@ class MMEXOFASTFitter:
         else:
             steps: list[WorkflowStep] = []
 
+        # TODO: Update this builder to insert tha anomaly search steps before renormalize steps.
         steps.extend(self._build_anomaly_search_steps())
         steps.extend(self._build_binary_fit_steps())
         if self.renormalize_errors:
@@ -1720,6 +1721,7 @@ class MMEXOFASTFitter:
             multiple incomplete records exist and none have chi-squared.
         """
         # TODO: ADD a THRESHOLDS parameter (dict) that can hold all the thresholds like DELTA_CHI2 so the user can control them.
+        # TODO: ADD support for choosing between FSPL and PSPL models.
         DELTA_CHI2 = 50.0
         label = lens_type.name.lower()
 
