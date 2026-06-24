@@ -2853,6 +2853,7 @@ class AnomalyPropertyEstimator():
            b. Otherwise, the negative peak is considered unimportant;
               return the largest positive peak.
         """
+        # TODO: Are there more optimal/robust criteria for peak selection?
         pos_peaks = [p for p in peaks if p['peak_dflux'] > 0]
         neg_peaks = [p for p in peaks if p['peak_dflux'] < 0]
 
