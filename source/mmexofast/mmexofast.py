@@ -1967,6 +1967,7 @@ class MMEXOFASTFitter:
         """
         est_params = {}
         estimator_classes = None
+        # TODO: Consider running all Estimators in all cases
         if self.intermediate_results.anomaly_type == 'wide':
             estimator_classes = [WidePlanetGridSearchEstimator, CloseUpperBinaryGridSearchEstimator,
                                  CloseLowerBinaryGridSearchEstimator]
@@ -2550,6 +2551,7 @@ class MMEXOFASTFitter:
             return self._get_event_t_range(event, n_tE=n_tE)
 
     def _plot_planet_window(self):
+        # TODO: Consider updating to use anomaly_lc_params? how different is best_af_grid_point from anomaly_lc_params?
         if self.intermediate_results.best_af_grid_point is not None:
             plt.axvline(self.intermediate_results.best_af_grid_point['t_0'] - 2450000., color='black', linestyle=':')
             plt.axvline(
@@ -2574,6 +2576,7 @@ class MMEXOFASTFitter:
 
     def _plot_event(self, event, n_tE=5, suptitle=None):
         # TODO: ADD automatic ylim
+        # TODO: ADD residuals panels
         if suptitle is None:
             suptitle = '{0}'.format(event.model.parameters)
 
@@ -2590,7 +2593,7 @@ class MMEXOFASTFitter:
         event.plot_model(
             t_range=t_range,
             subtract_2450000=True, color='black', zorder=10)
-        if event.model.n_lenses > 1:
+        if event.model.n_lenses > 1:  # TODO: Change to anomaly_lc_params exists
             self._plot_planet_window()
 
         plt.xlim(np.array(t_range) - 2450000.)
@@ -2601,6 +2604,7 @@ class MMEXOFASTFitter:
         if event.model.n_lenses > 1:
             planet_t_range = self._get_planet_t_range(event)
         else:
+            # TODO: use anomaly_lc_params if exists
             planet_t_range = self._get_event_t_range(event, n_tE=0.5)
 
         event.plot_model(t_range=planet_t_range, color='black', subtract_2450000=True, zorder=10)
